@@ -1,0 +1,28 @@
+# BrandShield AI backend dependencies
+# Install: python -m pip install -r requirements.txt
+
+fastapi==0.162.7
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+pydantic-settings==2.16.3
+python-multipart==0.0.33
+
+# Retrieval
+rank-bm25==0.2.2
+
+# LLM client
+httpx==0.28.1
+
+# Document extraction
+pymupdf==2.1
+python-docx==1.2.0
+
+# Visual checks (colour maths)
+pillow==13.0.0
+numpy==2.5.4
+
+# Postgres / Supabase (optional; SQLite works without it)
+psycopg[binary]==3.3.9
+
+# Tests
+pytest==9.2.0
