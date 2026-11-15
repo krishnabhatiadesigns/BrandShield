@@ -4,8 +4,8 @@ Brand governance for content **before** it is published. Submit a draft, get
 evidence-backed findings, fix them, and route that exact version to a human
 approver. Nothing is auto-published and nothing is silently rewritten.
 
-> **Live demo:** not yet deployed — see [Deployment](#deployment). Runs locally in
-> two commands.
+> **Live demo:** [Open BrandShield](https://brand-shield-amber.vercel.app/).
+> The frontend uses the deployed API listed under [Deployment](#deployment).
 
 ---
 
@@ -169,14 +169,14 @@ works and what is partial.
 
 ## Deployment
 
-The app is **not yet deployed**. Configs are prepared for:
+The app is deployed:
 
-- **Frontend** → Vercel or Netlify (`frontend/`, build `npm run build`, output `dist`)
-- **Backend** → Render or Railway (`backend/`, start
-  `uvicorn app.main:app --host 0.0.0.0 --port $PORT`)
+- **Frontend:** [https://brand-shield-amber.vercel.app/](https://brand-shield-amber.vercel.app/)
+- **Backend API:** [https://brandshield-api-eweqbqd8bpbwhbcn.centralindia-01.azurewebsites.net/](https://brandshield-api-eweqbqd8bpbwhbcn.centralindia-01.azurewebsites.net/)
 
-Set `VITE_API_URL` on the frontend to the backend URL, and `CORS_ORIGINS` on the
-backend to the frontend URL. Use `/health` as the keep-warm ping.
+For a separate deployment, set `VITE_API_URL` on the frontend to the backend
+URL, and `CORS_ORIGINS` on the backend to the frontend URL. Use `/health` as the
+keep-warm ping.
 
 ---
 
