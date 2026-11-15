@@ -15,7 +15,7 @@ const ROLES = [
   {
     key: 'manager' as const,
     title: 'Try as Manager',
-    blurb: 'Review the queue, read findings, and send a version back with comments.',
+    blurb: 'Review the queue, read findings, and send a version back with a required note.',
     accent: 'bg-gold-500 hover:bg-gold-600',
   },
   {
@@ -32,10 +32,46 @@ const STEPS = [
   { n: '3', title: 'Approve', text: 'A human approves that exact version. Nothing publishes itself.' },
 ]
 
+const USPS = [
+  {
+    title: 'A review loop that goes both ways',
+    text: 'Creators, managers and approvers can move work forward. Reviewers can send it back with a required note, so feedback has a clear owner and next step.',
+  },
+  {
+    title: 'Know exactly what changed',
+    text: 'Compare version-by-version drafts, see who made each change, and inspect the audit trail. Approvers can verify edits before sign-off.',
+  },
+  {
+    title: 'Grounded in your company knowledge',
+    text: 'Add company context, approved guidelines, facts and terminology. Retrieval-augmented AI checks use relevant workspace knowledge as evidence instead of relying on generic answers.',
+  },
+  {
+    title: 'AI plus dependable rule checks',
+    text: 'AI can flag tone and messaging concerns while deterministic checks catch rules like prohibited terms, missing disclaimers and fact mismatches. Rule checks still run if AI is unavailable.',
+  },
+  {
+    title: 'Useful fixes, not just a score',
+    text: 'Each finding points to affected text, explains the issue, shows supporting evidence and suggests a focused correction. People choose to accept, edit or reject each fix.',
+  },
+  {
+    title: 'People stay in control',
+    text: 'Nothing is auto-published. Approval is tied to one exact version, and unresolved high-severity issues require explicit sign-off.',
+  },
+  {
+    title: 'Brand checks beyond copy',
+    text: 'Check visual palette similarity and text contrast using colour-distance and WCAG contrast calculations, alongside content review.',
+  },
+  {
+    title: 'Workspace-specific and auditable',
+    text: 'Checks use the right workspace’s approved sources, and actions are recorded with who did them and when.',
+  },
+]
+
 export default function Landing() {
   const { enterDemo, waking, error, me } = useAuth()
   const navigate = useNavigate()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [whyUsOpen, setWhyUsOpen] = useState(false)
 
   const start = async (role: 'creator' | 'manager' | 'approver') => {
     await enterDemo(role)
@@ -56,23 +92,65 @@ export default function Landing() {
           <p className="mx-auto mt-4 max-w-2xl text-base text-gray-700 sm:text-lg">
             Check content against your approved brand guidelines, facts and terminology
             <em> before</em> it goes out. Every issue shows the exact text, the rule, why it
-            matters, the approved source, and a suggested fix.
+            matters, the approved source, and a suggested fix. Reviews are bidirectional: a
+            manager or approver can send a version back with a required note.
           </p>
-          <button
-            type="button"
-            onClick={() => setHelpOpen(true)}
-            className="mt-5 inline-flex items-center gap-2 rounded-full bg-gold-500 px-5 py-2.5 text-sm font-bold text-charcoal shadow-md ring-2 ring-gold-400/50 transition-all hover:-translate-y-0.5 hover:bg-gold-400 hover:shadow-lg"
-            aria-haspopup="dialog"
-          >
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-charcoal text-[11px] font-bold text-white"
-              aria-hidden="true"
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => setWhyUsOpen((open) => !open)}
+              className="inline-flex items-center gap-2 rounded-full border-2 border-brand-700 bg-white px-5 py-2.5 text-sm font-bold text-brand-900 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-brand-50 hover:shadow-md"
+              aria-expanded={whyUsOpen}
+              aria-controls="why-us-panel"
             >
-              ?
-            </span>
-            Need help? See how it works
-          </button>
+              Why us?
+              <span aria-hidden="true">{whyUsOpen ? '−' : '+'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-gold-500 px-5 py-2.5 text-sm font-bold text-charcoal shadow-md ring-2 ring-gold-400/50 transition-all hover:-translate-y-0.5 hover:bg-gold-400 hover:shadow-lg"
+              aria-haspopup="dialog"
+            >
+              <span
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-charcoal text-[11px] font-bold text-white"
+                aria-hidden="true"
+              >
+                ?
+              </span>
+              Need help? See how it works
+            </button>
+          </div>
         </header>
+
+        {whyUsOpen && (
+          <section
+            id="why-us-panel"
+            className="mt-8 rounded-2xl border-2 border-brand-200 bg-white p-5 shadow-lg sm:p-7"
+            aria-labelledby="why-us-title"
+          >
+            <div className="mx-auto max-w-3xl text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold-600">
+                Why teams choose BrandShield
+              </p>
+              <h2 id="why-us-title" className="mt-2 text-2xl font-bold tracking-tight text-brand-900">
+                AI review you can verify, guide and trust
+              </h2>
+              <p className="mt-2 text-sm text-gray-600">
+                We pair AI with company-specific evidence and a human-owned workflow—so teams can
+                move quickly without losing accountability.
+              </p>
+            </div>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              {USPS.map((usp) => (
+                <li key={usp.title} className="rounded-xl border border-brand-100 bg-cream/60 p-4">
+                  <h3 className="font-semibold text-charcoal">{usp.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-600">{usp.text}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {me && (
           <div className="mx-auto mt-6 max-w-xl rounded-lg border border-brand-200 bg-white p-3 text-center text-sm">

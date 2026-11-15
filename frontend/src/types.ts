@@ -144,6 +144,7 @@ export interface PaletteColor {
 export interface BrandProfile {
   workspace_id: number
   workspace_name: string
+  company_context: string
   passages: Passage[]
   terms: Term[]
   facts: Fact[]

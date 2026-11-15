@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { ErrorBanner, LoadingBlock, StatusBadge } from '../components/ui'
+import { Diff, ErrorBanner, LoadingBlock, StatusBadge } from '../components/ui'
 import type { AuditEvent, HistoryVersion } from '../types'
 
 export default function HistoryPage() {
@@ -17,7 +17,7 @@ export default function HistoryPage() {
     try {
       const [v, a] = await Promise.all([
         itemId ? api.history(itemId) : Promise.resolve([]),
-        api.audit(),
+        itemId ? api.contentAudit(itemId) : api.audit(),
       ])
       setVersions(v)
       setAudit(a)
@@ -37,8 +37,9 @@ export default function HistoryPage() {
           {itemId ? 'Version history' : 'Audit trail'}
         </h1>
         <p className="mt-1 text-sm text-gray-600">
-          Every version, decision and approval is recorded. An approval applies to one exact
-          version only.
+          {itemId
+            ? 'Every version, decision and approval for this submission only. An approval applies to one exact version.'
+            : 'Workspace-wide audit trail. Open a submission to see its own version history.'}
         </p>
       </div>
 
@@ -51,13 +52,14 @@ export default function HistoryPage() {
             <LoadingBlock label="Loading versions…" />
           ) : (
             <div className="space-y-3">
-              {versions.map((v) => (
+              {versions.map((v, index) => (
                 <article key={v.version_id} className="card p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-charcoal">v{v.version_no}</span>
                     <StatusBadge status={v.status} />
                     <span className="text-xs text-gray-500">
-                      {v.finding_count} findings · {new Date(v.created_at).toLocaleString()}
+                      {v.finding_count} findings · {v.created_by} ·{' '}
+                      {new Date(v.created_at).toLocaleString()}
                     </span>
                     <Link
                       to={`/review/${itemId}`}
@@ -66,10 +68,25 @@ export default function HistoryPage() {
                       Open
                     </Link>
                   </div>
-                  <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-gray-600">
-                    {v.body.slice(0, 240)}
-                    {v.body.length > 240 ? '…' : ''}
-                  </p>
+                  {index === 0 ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-brand-700">
+                        View original submission
+                      </summary>
+                      <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+                        {v.body}
+                      </p>
+                    </details>
+                  ) : (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-brand-700">
+                        View changes in this version
+                      </summary>
+                      <div className="mt-2">
+                        <Diff before={versions[index - 1].body} after={v.body} />
+                      </div>
+                    </details>
+                  )}
                   {v.approvals.length > 0 && (
                     <ul className="mt-2 space-y-1">
                       {v.approvals.map((a, i) => (
@@ -88,7 +105,9 @@ export default function HistoryPage() {
       )}
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-charcoal">Audit trail</h2>
+        <h2 className="mb-3 text-lg font-semibold text-charcoal">
+          {itemId ? 'Activity for this submission' : 'Audit trail'}
+        </h2>
         {audit === null ? (
           <LoadingBlock label="Loading the audit trail…" />
         ) : (

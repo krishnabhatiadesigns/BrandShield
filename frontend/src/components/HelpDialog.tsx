@@ -24,6 +24,10 @@ const FEATURES = [
     text: 'Each finding cites an approved passage from this workspace, or says "Needs human verification". A claim is only called contradicted when an approved source actually contradicts it.',
   },
   {
+    title: 'Company context for AI reviews',
+    text: 'Managers can save company background, audience, tone and priorities in Brand profile → Company context. It is included in every AI review as guidance, while factual findings still require approved passages.',
+  },
+  {
     title: 'Hybrid checks that never go blank',
     text: 'Deterministic rules (prohibited terms, wrong product names, fact mismatches, missing disclaimers) always run. AI analysis adds tone and messaging findings on top. If the AI is down, you still get results and a clear message.',
   },
@@ -33,7 +37,11 @@ const FEATURES = [
   },
   {
     title: 'Versioned approvals',
-    text: 'An approval is tied to one version. Editing creates a new version and resets the status, so an old approval can never cover new text.',
+    text: 'An approval is tied to one version. Editing creates a new version and resets the status, so an old approval can never cover new text. Only approvers can open View past changes to compare revisions and see who made them.',
+  },
+  {
+    title: 'Bidirectional review',
+    text: 'A manager or approver can send a version back one level. A note is mandatory, so the previous level always knows what to change. Each submission keeps its own version history and activity trail.',
   },
   {
     title: 'Roles enforced in the backend',

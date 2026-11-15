@@ -151,6 +151,12 @@ class ApprovalRequest(BaseModel):
     high_severity_signoff: bool = False
 
 
+class SendBackRequest(BaseModel):
+    """Send a version back one level. The note is mandatory."""
+
+    note: str = Field(min_length=1, max_length=2000)
+
+
 class ApprovalOut(BaseModel):
     id: int
     version_id: int
@@ -206,11 +212,16 @@ class PaletteOut(BaseModel):
 class BrandProfile(BaseModel):
     workspace_id: int
     workspace_name: str
+    company_context: str
     passages: list[PassageOut]
     terms: list[TermOut]
     facts: list[FactOut]
     palette: list[PaletteOut]
     disclaimers: dict[str, str | None]
+
+
+class CompanyContextUpdate(BaseModel):
+    company_context: str = Field(max_length=10000)
 
 
 class TermCreate(BaseModel):

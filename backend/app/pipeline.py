@@ -116,9 +116,19 @@ def run_review(
             if f.source_passage_id and f.source_passage_id not in passage_ids:
                 passage_ids.append(f.source_passage_id)
         llm_passages = [p for p in ctx.passages if int(p["id"]) in passage_ids]
+        company_context = db.query_one(
+            "SELECT company_context FROM workspace_context WHERE workspace_id = ?",
+            (workspace_id,),
+        )
 
         existing_summary = [f"{f.rule}: {f.affected_text}" for f in deterministic]
-        result = analyse(body, content_type, llm_passages, existing_summary)
+        result = analyse(
+            body,
+            content_type,
+            llm_passages,
+            existing_summary,
+            company_context["company_context"] if company_context else "",
+        )
 
         if result.ok:
             llm_status = "ok"

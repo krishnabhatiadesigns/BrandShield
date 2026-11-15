@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../components/AuthContext'
+import SendBackPanel from '../components/SendBackPanel'
 import {
   ErrorBanner,
   EvidenceBadge,
@@ -25,6 +26,7 @@ export default function ApprovalScreen() {
   const [comment, setComment] = useState('')
 
   const canApprove = me?.role === 'approver' || me?.role === 'admin'
+  const canViewHistory = me?.role === 'approver'
 
   const load = useCallback(async () => {
     setError(null)
@@ -66,6 +68,18 @@ export default function ApprovalScreen() {
     }
   }
 
+  const sendBack = async (note: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      setItem(await api.sendBack(itemId, note))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send this version back.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (error && !item) {
     return (
       <div className="mx-auto max-w-2xl space-y-4">
@@ -88,9 +102,16 @@ export default function ApprovalScreen() {
   return (
     <div className="space-y-5">
       <div>
-        <Link to={`/review/${itemId}`} className="text-xs font-semibold text-brand-700 hover:underline">
-          ← Back to review
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link to={`/review/${itemId}`} className="text-xs font-semibold text-brand-700 hover:underline">
+            ← Back to review
+          </Link>
+          {canViewHistory && (
+            <Link to={`/history/${itemId}`} className="text-xs font-semibold text-brand-700 hover:underline">
+              View past changes
+            </Link>
+          )}
+        </div>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-brand-900">
           Approval · {item.title}
         </h1>
@@ -257,6 +278,7 @@ export default function ApprovalScreen() {
                 <strong className="font-semibold">Send back</strong> lets the creator fix and
                 resubmit. <strong className="font-semibold">Reject</strong> ends this version.
               </p>
+              <SendBackPanel destination="Manager" busy={busy} onSendBack={sendBack} />
             </section>
           )}
 

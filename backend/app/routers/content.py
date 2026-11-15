@@ -21,6 +21,7 @@ from ..models import (
     FindingOut,
     ReviewRunOut,
     SampleInfo,
+    SendBackRequest,
     VersionOut,
 )
 from ..pipeline import run_review
@@ -662,6 +663,66 @@ def submit_for_approval(
     return _detail(db, principal.workspace_id, _get_item(db, principal.workspace_id, item_id))
 
 
+@router.post("/content/{item_id}/send-back", response_model=ContentDetail)
+def send_back(
+    item_id: int,
+    payload: SendBackRequest,
+    principal: Principal = Depends(require_role("manager", "approver", "admin")),
+    db: Database = Depends(get_db),
+) -> ContentDetail:
+    """Return a version to the previous level. A note is mandatory.
+
+    Approver -> Manager Review   (needs another look before sign-off)
+    Manager  -> Changes Required (goes back to the creator to fix)
+    """
+    item = _get_item(db, principal.workspace_id, item_id)
+    if not item.get("current_version_id"):
+        raise HTTPException(status_code=409, detail="This submission has no version to send back.")
+    ver = _get_version(db, principal.workspace_id, int(item["current_version_id"]))
+    note = payload.note.strip()
+    if not note:
+        raise HTTPException(
+            status_code=422, detail="A note is required when sending a version back."
+        )
+
+    current = ver["status"]
+    if principal.role == "approver":
+        if current != STATUS_APPROVER_REVIEW:
+            raise HTTPException(
+                status_code=409,
+                detail=f"This version is in '{current}', so it is not waiting on the approver.",
+            )
+        new_status = STATUS_MANAGER_REVIEW
+        destination = "the manager"
+    else:
+        if current not in (STATUS_MANAGER_REVIEW, STATUS_RESUBMITTED, STATUS_AI_COMPLETE):
+            raise HTTPException(
+                status_code=409,
+                detail=f"This version is in '{current}', so it is not waiting on the manager.",
+            )
+        new_status = STATUS_CHANGES_REQUIRED
+        destination = "the creator"
+
+    ts = now_iso()
+    with db.tx() as conn:
+        conn.execute(
+            "UPDATE content_versions SET status = ? WHERE id = ?", (new_status, int(ver["id"]))
+        )
+        conn.execute(
+            "UPDATE content_items SET status = ?, updated_at = ? WHERE id = ?",
+            (new_status, ts, item_id),
+        )
+        conn.execute(
+            "INSERT INTO comments (version_id, workspace_id, author, body, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (int(ver["id"]), principal.workspace_id, principal.display_name,
+             f"Sent back to {destination}: {note}", ts),
+        )
+    _audit(db, principal.workspace_id, principal.display_name, "content.sent_back", "version",
+           int(ver["id"]), f"Sent back to {destination}: {note}")
+    return _detail(db, principal.workspace_id, _get_item(db, principal.workspace_id, item_id))
+
+
 @router.post("/content/{item_id}/comments", response_model=ContentDetail)
 def add_comment(
     item_id: int,
@@ -752,13 +813,16 @@ def decide_approval(
 @router.get("/content/{item_id}/history", response_model=list[dict])
 def content_history(
     item_id: int,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(require_role("approver")),
     db: Database = Depends(get_db),
 ) -> list[dict]:
     item = _get_item(db, principal.workspace_id, item_id)
     versions = db.query(
-        "SELECT id, version_no, status, created_by, created_at, body FROM content_versions"
-        " WHERE content_item_id = ? AND workspace_id = ? ORDER BY version_no",
+        "SELECT v.id, v.version_no, v.status,"
+        " COALESCE(m.display_name, v.created_by) AS created_by, v.created_at, v.body"
+        " FROM content_versions v"
+        " LEFT JOIN memberships m ON m.workspace_id = v.workspace_id AND m.user_id = v.created_by"
+        " WHERE v.content_item_id = ? AND v.workspace_id = ? ORDER BY v.version_no",
         (item_id, principal.workspace_id),
     )
     out: list[dict] = []
@@ -787,9 +851,53 @@ def content_history(
     return out
 
 
+@router.get("/content/{item_id}/audit", response_model=list[dict])
+def content_audit(
+    item_id: int,
+    principal: Principal = Depends(require_role("approver")),
+    db: Database = Depends(get_db),
+) -> list[dict]:
+    """Audit events for one submission only, including its versions and findings."""
+    _get_item(db, principal.workspace_id, item_id)
+    version_ids = [
+        int(v["id"])
+        for v in db.query(
+            "SELECT id FROM content_versions WHERE content_item_id = ? AND workspace_id = ?",
+            (item_id, principal.workspace_id),
+        )
+    ]
+    finding_ids = [
+        int(f["id"])
+        for f in db.query(
+            "SELECT f.id FROM findings f JOIN content_versions v ON v.id = f.version_id"
+            " WHERE v.content_item_id = ? AND f.workspace_id = ?",
+            (item_id, principal.workspace_id),
+        )
+    ]
+
+    clauses = ["(entity_type = 'content_item' AND entity_id = ?)"]
+    params: list[Any] = [item_id]
+    if version_ids:
+        clauses.append(
+            f"(entity_type = 'version' AND entity_id IN ({','.join('?' for _ in version_ids)}))"
+        )
+        params.extend(version_ids)
+    if finding_ids:
+        clauses.append(
+            f"(entity_type = 'finding' AND entity_id IN ({','.join('?' for _ in finding_ids)}))"
+        )
+        params.extend(finding_ids)
+
+    return db.query(
+        "SELECT id, actor, action, entity_type, entity_id, detail, created_at FROM audit_events"
+        f" WHERE workspace_id = ? AND ({' OR '.join(clauses)}) ORDER BY id DESC LIMIT 200",
+        (principal.workspace_id, *params),
+    )
+
+
 @router.get("/audit", response_model=list[dict])
 def audit_trail(
-    principal: Principal = Depends(get_principal), db: Database = Depends(get_db)
+    principal: Principal = Depends(require_role("approver")), db: Database = Depends(get_db)
 ) -> list[dict]:
     return db.query(
         "SELECT id, actor, action, entity_type, entity_id, detail, created_at FROM audit_events"

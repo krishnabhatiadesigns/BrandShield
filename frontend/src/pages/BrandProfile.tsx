@@ -4,13 +4,13 @@ import { useAuth } from '../components/AuthContext'
 import { ErrorBanner, LoadingBlock, Spinner } from '../components/ui'
 import type { BrandProfile, VisualCheckResponse } from '../types'
 
-type Tab = 'guidelines' | 'terms' | 'facts' | 'palette' | 'visual'
+type Tab = 'context' | 'guidelines' | 'terms' | 'facts' | 'palette' | 'visual'
 
 export default function BrandProfilePage() {
   const { me } = useAuth()
   const [profile, setProfile] = useState<BrandProfile | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('guidelines')
+  const [tab, setTab] = useState<Tab>('context')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -50,6 +50,7 @@ export default function BrandProfilePage() {
   if (!profile) return <LoadingBlock label="Loading the brand profile…" />
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: 'context', label: 'Company context' },
     { key: 'guidelines', label: `Guidelines (${profile.passages.length})` },
     { key: 'terms', label: `Terminology (${profile.terms.length})` },
     { key: 'facts', label: `Facts (${profile.facts.length})` },
@@ -87,6 +88,9 @@ export default function BrandProfilePage() {
         ))}
       </div>
 
+      {tab === 'context' && (
+        <CompanyContextTab profile={profile} canEdit={canEdit} busy={busy} run={run} />
+      )}
       {tab === 'guidelines' && (
         <GuidelinesTab profile={profile} canEdit={canEdit} busy={busy} run={run} />
       )}
@@ -101,6 +105,66 @@ export default function BrandProfilePage() {
 }
 
 type RunFn = (fn: () => Promise<unknown>, message: string) => Promise<void>
+
+function CompanyContextTab({
+  profile,
+  canEdit,
+  busy,
+  run,
+}: {
+  profile: BrandProfile
+  canEdit: boolean
+  busy: boolean
+  run: RunFn
+}) {
+  const [companyContext, setCompanyContext] = useState(profile.company_context)
+
+  return (
+    <section className="card space-y-3 p-4">
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          Company guidelines and context
+        </h2>
+        <p className="mt-1 text-xs text-gray-600">
+          This workspace-specific background is sent to AI on every review. Use it for company
+          facts, audience, tone, and priorities; approved passages remain the source for factual
+          evidence.
+        </p>
+      </div>
+      <textarea
+        className="input min-h-[160px]"
+        maxLength={10000}
+        aria-label="Company guidelines and context"
+        placeholder="Describe your company, products, audience, tone, or other context the AI should consider…"
+        value={companyContext}
+        disabled={!canEdit}
+        onChange={(e) => setCompanyContext(e.target.value)}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-gray-500">{companyContext.length}/10,000 characters</span>
+        {canEdit ? (
+          <button
+            className="btn-primary"
+            disabled={busy || companyContext === profile.company_context}
+            onClick={() =>
+              void run(
+                () => api.updateCompanyContext(companyContext),
+                'Company context saved and will be included in future AI reviews.',
+              )
+            }
+          >
+            {busy ? <Spinner /> : null}
+            Save company context
+          </button>
+        ) : (
+          <span className="text-xs text-gray-500">
+            Only managers and admins can edit company context.
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
 
 function GuidelinesTab({
   profile,

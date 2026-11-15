@@ -7,6 +7,7 @@ from ..auth import Principal, get_principal, require_role
 from ..db import Database, get_db
 from ..models import (
     BrandProfile,
+    CompanyContextUpdate,
     FactCreate,
     FactOut,
     PaletteCreate,
@@ -48,14 +49,44 @@ def get_profile(
     palette = db.query(
         "SELECT id, name, hex, role FROM palette_colors WHERE workspace_id = ? ORDER BY id", (ws,)
     )
+    context = db.query_one(
+        "SELECT company_context FROM workspace_context WHERE workspace_id = ?", (ws,)
+    )
     return BrandProfile(
         workspace_id=ws,
         workspace_name=principal.workspace_name,
+        company_context=context["company_context"] if context else "",
         passages=[PassageOut(**p) for p in passages],
         terms=[TermOut(**t) for t in terms],
         facts=[FactOut(**f) for f in facts],
         palette=[PaletteOut(**c) for c in palette],
         disclaimers=DISCLAIMERS,
+    )
+
+
+@router.put("/company-context", status_code=status.HTTP_204_NO_CONTENT)
+def update_company_context(
+    payload: CompanyContextUpdate,
+    principal: Principal = Depends(require_role("manager", "admin")),
+    db: Database = Depends(get_db),
+) -> None:
+    ts = now_iso()
+    db.execute(
+        """
+        INSERT INTO workspace_context (workspace_id, company_context, updated_by, updated_at)
+        VALUES (?,?,?,?)
+        ON CONFLICT (workspace_id) DO UPDATE SET
+            company_context = excluded.company_context,
+            updated_by = excluded.updated_by,
+            updated_at = excluded.updated_at
+        """,
+        (principal.workspace_id, payload.company_context.strip(), principal.display_name, ts),
+    )
+    db.insert(
+        "INSERT INTO audit_events (workspace_id, actor, action, entity_type, entity_id, detail, created_at)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (principal.workspace_id, principal.display_name, "company_context.updated", "workspace",
+         principal.workspace_id, "Company context updated", ts),
     )
 
 

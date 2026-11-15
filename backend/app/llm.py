@@ -17,11 +17,12 @@ from .config import get_settings
 
 log = logging.getLogger("brandshield.llm")
 
-SYSTEM_PROMPT = """You are a brand governance reviewer for Northwind Foods.
-You review a draft against the organisation's approved brand passages.
+SYSTEM_PROMPT = """You are a brand governance reviewer.
+You review a draft against the organisation's approved brand passages and company context.
 
 Rules you must follow:
-1. Only report issues you can justify from the DRAFT and the APPROVED PASSAGES given.
+1. Use the DRAFT, APPROVED PASSAGES, and COMPANY CONTEXT to identify relevant issues.
+   Factual support or contradiction still requires an approved passage.
 2. Every finding must quote the exact affected text from the draft, character for character.
 3. If a claim is not supported by an approved passage, set evidence_status to
    "needs_verification". Never call a claim false unless an approved passage
@@ -31,12 +32,18 @@ Rules you must follow:
 5. Suggestions must change only the problematic phrase, keep the author's intent,
    use approved terminology, and must not introduce new unverified claims.
 6. Do not repeat issues already listed in DETERMINISTIC FINDINGS.
-7. Return JSON only, matching the schema exactly. No prose, no markdown fences.
+7. Company context is background guidance, not evidence. Do not cite it or use it
+   to label a factual claim supported or contradicted; those labels require an
+   approved passage. It may guide company-specific tone and messaging feedback.
+8. Return JSON only, matching the schema exactly. No prose, no markdown fences.
 
 Severity guide: high = factual/legal/brand-breaking; medium = tone or messaging
 drift; low = style polish."""
 
 USER_TEMPLATE = """CONTENT TYPE: {content_type}
+
+COMPANY CONTEXT (background guidance; not evidence):
+{company_context}
 
 DRAFT:
 <<<DRAFT
@@ -98,6 +105,7 @@ def analyse(
     content_type: str,
     passages: list[dict[str, Any]],
     existing: list[str],
+    company_context: str = "",
 ) -> LLMResult:
     settings = get_settings()
     if not settings.llm_enabled:
@@ -126,6 +134,7 @@ def analyse(
                     body=body,
                     passages=passage_block,
                     existing=existing_block,
+                    company_context=company_context or "(none provided)",
                 ),
             },
         ],

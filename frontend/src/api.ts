@@ -117,6 +117,12 @@ export const api = {
   submit: (id: number) =>
     request<ContentDetail>(`/api/content/${id}/submit`, { method: 'POST' }),
 
+  sendBack: (id: number, note: string) =>
+    request<ContentDetail>(`/api/content/${id}/send-back`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+
   comment: (id: number, body: string) =>
     request<ContentDetail>(`/api/content/${id}/comments`, {
       method: 'POST',
@@ -139,9 +145,15 @@ export const api = {
     }),
 
   history: (id: number) => request<HistoryVersion[]>(`/api/content/${id}/history`),
+  contentAudit: (id: number) => request<AuditEvent[]>(`/api/content/${id}/audit`),
   audit: () => request<AuditEvent[]>('/api/audit'),
 
   brand: () => request<BrandProfile>('/api/brand'),
+  updateCompanyContext: (companyContext: string) =>
+    request<void>('/api/brand/company-context', {
+      method: 'PUT',
+      body: JSON.stringify({ company_context: companyContext }),
+    }),
   addTerm: (payload: { term: string; kind: string; replacement?: string; notes?: string }) =>
     request('/api/brand/terms', { method: 'POST', body: JSON.stringify(payload) }),
   addFact: (payload: { fact_key: string; value: string; unit?: string }) =>

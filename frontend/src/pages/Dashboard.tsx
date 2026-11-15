@@ -12,35 +12,48 @@ const TYPE_LABEL: Record<string, string> = {
   document: 'Document',
 }
 
-function SummaryCard({ item }: { item: ContentSummary }) {
+function SummaryCard({
+  item,
+  canViewHistory,
+}: {
+  item: ContentSummary
+  canViewHistory: boolean
+}) {
   return (
-    <Link
-      to={`/review/${item.id}`}
-      className="card block p-4 transition-shadow hover:shadow-md"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate font-semibold text-charcoal">{item.title}</h3>
-          <p className="mt-0.5 text-xs text-gray-500">
-            {TYPE_LABEL[item.content_type] ?? item.content_type} · v{item.version_no}
-          </p>
+    <div className="card p-4 transition-shadow hover:shadow-md">
+      <Link to={`/review/${item.id}`} className="block">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate font-semibold text-charcoal">{item.title}</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {TYPE_LABEL[item.content_type] ?? item.content_type} · v{item.version_no}
+            </p>
+          </div>
+          <StatusBadge status={item.status} />
         </div>
-        <StatusBadge status={item.status} />
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        {item.open_high > 0 && (
-          <span className="badge bg-red-100 text-red-800">{item.open_high} high open</span>
-        )}
-        {item.needs_verification > 0 && (
-          <span className="badge bg-purple-100 text-purple-800">
-            {item.needs_verification} need verification
-          </span>
-        )}
-        {item.open_high === 0 && item.needs_verification === 0 && (
-          <span className="badge bg-brand-100 text-brand-800">No open high-severity items</span>
-        )}
-      </div>
-    </Link>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {item.open_high > 0 && (
+            <span className="badge bg-red-100 text-red-800">{item.open_high} high open</span>
+          )}
+          {item.needs_verification > 0 && (
+            <span className="badge bg-purple-100 text-purple-800">
+              {item.needs_verification} need verification
+            </span>
+          )}
+          {item.open_high === 0 && item.needs_verification === 0 && (
+            <span className="badge bg-brand-100 text-brand-800">No open high-severity items</span>
+          )}
+        </div>
+      </Link>
+      {canViewHistory && (
+        <Link
+          to={`/history/${item.id}`}
+          className="mt-2 inline-block text-xs font-semibold text-brand-700 hover:underline"
+        >
+          View past changes
+        </Link>
+      )}
+    </div>
   )
 }
 
@@ -53,6 +66,7 @@ export default function Dashboard() {
 
   const canReview = me?.role === 'manager' || me?.role === 'approver' || me?.role === 'admin'
   const canCreate = me?.role === 'creator' || me?.role === 'admin'
+  const canViewHistory = me?.role === 'approver'
 
   const load = useCallback(async () => {
     setError(null)
@@ -116,6 +130,36 @@ export default function Dashboard() {
         </ol>
       </section>
 
+      {canViewHistory && (
+        <section
+          className="rounded-2xl border-2 border-gold-400 bg-gradient-to-r from-amber-50 via-white to-gold-50 p-4 shadow-md sm:p-5"
+          aria-labelledby="approver-history-note"
+        >
+          <div className="flex items-start gap-3">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold-400 text-lg font-black text-charcoal shadow-sm"
+              aria-hidden="true"
+            >
+              !
+            </span>
+            <div>
+              <h2
+                id="approver-history-note"
+                className="text-sm font-extrabold uppercase tracking-wide text-brand-900"
+              >
+                Before you approve, verify what changed
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-gray-700">
+                Open a submission and select{' '}
+                <strong className="font-bold text-brand-900">View past changes</strong> to compare
+                versions. Check whether employees edited the draft or passed the AI response along
+                unchanged.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
 
       {canReview && (
@@ -135,7 +179,7 @@ export default function Dashboard() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {queue.slice(0, 6).map((item) => (
-                <SummaryCard key={item.id} item={item} />
+                <SummaryCard key={item.id} item={item} canViewHistory={canViewHistory} />
               ))}
             </div>
           )}
@@ -162,7 +206,7 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <SummaryCard key={item.id} item={item} />
+              <SummaryCard key={item.id} item={item} canViewHistory={canViewHistory} />
             ))}
           </div>
         )}

@@ -18,6 +18,12 @@ function Protected({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function ApproverOnly({ children }: { children: React.ReactNode }) {
+  const { me } = useAuth()
+  if (me?.role !== 'approver') return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -35,8 +41,22 @@ function AppRoutes() {
         <Route path="/approval/:id" element={<ApprovalScreen />} />
         <Route path="/queue" element={<Queue />} />
         <Route path="/brand" element={<BrandProfilePage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/history/:id" element={<HistoryPage />} />
+        <Route
+          path="/history"
+          element={
+            <ApproverOnly>
+              <HistoryPage />
+            </ApproverOnly>
+          }
+        />
+        <Route
+          path="/history/:id"
+          element={
+            <ApproverOnly>
+              <HistoryPage />
+            </ApproverOnly>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

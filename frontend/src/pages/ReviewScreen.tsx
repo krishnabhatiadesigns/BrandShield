@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../components/AuthContext'
+import SendBackPanel from '../components/SendBackPanel'
 import {
   Diff,
   ErrorBanner,
@@ -317,6 +318,14 @@ export default function ReviewScreen() {
   const canEdit = myTurn
   const canEditDraft = myTurn
 
+  // Who can send this version back one level, and to whom.
+  const sendBackTo =
+    isApprover && waitingOnApprover
+      ? 'Manager'
+      : isManager && (waitingOnManager || canSendOn)
+        ? 'Creator'
+        : null
+
   // The single forward action, named for its actual destination.
   let forward: { label: string; to: string; enabled: boolean; hint: string } | null = null
   if (isManager && (waitingOnManager || canSendOn)) {
@@ -458,6 +467,14 @@ export default function ReviewScreen() {
               {forward.label}
             </button>
           </div>
+        )}
+
+        {sendBackTo && (
+          <SendBackPanel
+            destination={sendBackTo}
+            busy={busy !== null}
+            onSendBack={(note) => act('send-back', () => api.sendBack(itemId, note))}
+          />
         )}
 
         {isApprover && waitingOnApprover && (
@@ -646,9 +663,11 @@ export default function ReviewScreen() {
         <Link to={`/approval/${itemId}`} className="btn-secondary">
           Open approval view →
         </Link>
-        <Link to={`/history/${itemId}`} className="btn-ghost">
-          Version history
-        </Link>
+        {me?.role === 'approver' && (
+          <Link to={`/history/${itemId}`} className="btn-ghost">
+            View past changes
+          </Link>
+        )}
         <button className="btn-ghost ml-auto" onClick={() => navigate('/dashboard')}>
           Done
         </button>

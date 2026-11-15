@@ -57,9 +57,11 @@ export default function Layout() {
             <NavLink to="/brand" className={linkClass}>
               Brand profile
             </NavLink>
-            <NavLink to="/history" className={linkClass}>
-              History
-            </NavLink>
+            {me?.role === 'approver' && (
+              <NavLink to="/history" className={linkClass}>
+                History
+              </NavLink>
+            )}
           </nav>
 
           <div className="ml-auto flex items-center gap-2">

@@ -19,6 +19,14 @@ _TABLES = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS workspace_context (
+        workspace_id INTEGER PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        company_context TEXT NOT NULL DEFAULT '',
+        updated_by TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS memberships (
         id {pk},
         workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
