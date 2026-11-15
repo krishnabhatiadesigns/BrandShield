@@ -1,45 +1,8 @@
-# --- secrets: never commit these -------------------------------------------
-.env
-.env.local
-.env.*.local
-*.pem
-*.key
-
-# --- python ----------------------------------------------------------------
-__pycache__/
-*.py[cod]
-*.egg-info/
+﻿.env
+.env.*
+!.env.example
 .venv/
 venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# --- local database --------------------------------------------------------
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
-
-# --- node ------------------------------------------------------------------
-node_modules/
-dist/
-dist-ssr/
-.vite/
-*.local
-*.tsbuildinfo
-
-# --- editors / os ----------------------------------------------------------
-.vscode/*
-!.vscode/extensions.json
-.idea/
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# --- logs / temp -----------------------------------------------------------
-*.log
-npm-debug.log*
-.tmp_*
-tmp/
+__pycache__/
+*.pyc
+.vscode/
