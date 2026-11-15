@@ -1,11 +1,13 @@
 # BrandShield AI backend dependencies
 # Install: python -m pip install -r requirements.txt
 
-fastapi==0.162.7
-uvicorn[standard]==0.54.0
+fastapi
+gunicorn
+uvicorn
 pydantic==2.14.3
 pydantic-settings==2.16.3
 python-multipart==0.0.33
+
 
 # Retrieval
 rank-bm25==0.2.2
