@@ -4,21 +4,20 @@ What changed from the Round 1 plan and why.
 
 ---
 
-## 1. Database: SQLite locally, Supabase adapter for production
+## 1. Database: SQLite locally, generic PostgreSQL option
 
-**Planned:** Supabase Postgres from day one.
+**Planned:** Hosted PostgreSQL from day one.
 
 **Changed:** Built against a local SQLite file, with a database layer that speaks
 both engines.
 
-**Why:** No Supabase credentials were available in the build environment. Rather
-than block the entire workflow, `app/db.py` was written to translate `?`
+**Why:** Rather than block the workflow on hosted database setup, `app/db.py` was written to translate `?`
 placeholders to `%s` and return dicts from either driver. The schema is one DDL
-template rendered per engine. Switching to Supabase is a `DATABASE_URL` change,
-not a code change.
+template rendered per engine. Switching from SQLite to generic PostgreSQL is a
+`DATABASE_URL` change, not a code change.
 
-**Impact:** The core workflow was verifiable end to end on day one. Supabase
-Auth and Storage remain wired but unexercised.
+**Impact:** The core workflow is verifiable end to end. Provider-specific auth
+and storage are not part of this product; uploads are parsed in memory.
 
 ---
 
@@ -137,29 +136,49 @@ and verified; the input path is simpler.
 
 ---
 
-## 10. Test suite not completed
+## 10. Labelled accuracy evaluation not completed
 
 **Planned:** A 20-item labelled set with precision and recall printed to markdown,
 plus cross-workspace isolation and approval-invalidation tests.
 
-**Changed:** Not written. Only a placeholder `tests/__init__.py` exists.
+**Changed:** The labelled 20-item accuracy set and precision/recall report are
+still not written. Round 3 added regression and workflow tests in
+`backend/tests/test_round3_readiness.py` and `backend/tests/test_sessions.py`,
+bringing the automated backend suite to 20 tests.
 
-**Why:** Time went into the workflow correctness issues above, which were found by
-manual end-to-end testing.
+**Why:** Functional correctness tests and accuracy measurement answer different
+questions. No labelled dataset was available to support an accuracy claim.
 
-**Impact:** **No accuracy numbers are claimed anywhere in this repo.** The
-isolation and invalidation behaviours were verified manually via API calls, not
-by automated tests.
+**Impact:** **No accuracy numbers are claimed anywhere in this repo.** Evidence
+validation, review transitions, stale/overlapping edits and approval invalidation
+are now exercised by automated tests.
 
 ---
 
-## 11. Deployment not completed
+## 11. Demo session and CORS hardening
+
+**Changed:** Removed the unused provider-specific auth/storage configuration.
+Demo tokens now expire, can be revoked on logout, and are rejected after expiry.
+Wildcard CORS origins are rejected in favor of exact configured origins.
+
+**Why:** The running application provides demo role selection rather than a
+production account system, and it does not persist uploaded files. Configuration
+and documentation should describe the behavior that actually exists.
+
+**Impact:** Tests cover expiration, revocation, explicit CORS origins and
+workspace-scoped approved/in-force retrieval. Production deployment must set
+`CORS_ORIGINS` to the frontend's exact origin.
+
+---
+
+## 12. Deployment completed
 
 **Planned:** Public URL on Vercel/Netlify + Render/Railway.
 
-**Changed:** Configs prepared, not deployed.
+**Changed:** The frontend is deployed on Vercel and the API on Azure App Service.
 
-**Why:** No deploy credentials were available in the build environment.
+**Verified:** The frontend loaded and the API `/health` endpoint reported
+`status: ok` and `database: up` on 18 November 2026.
 
-**Impact:** The app runs locally in two commands. Deployment is a credentials
-step, not a code step.
+**Impact:** Judges can use the live demo without a local setup. After any
+deployment or configuration change, repeat the health check and the main workflow.

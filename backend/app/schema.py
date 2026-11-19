@@ -1,6 +1,6 @@
 """Database schema for BrandShield AI.
 
-One DDL template is rendered for both SQLite (local dev) and Postgres (Supabase).
+One DDL template is rendered for both SQLite (local dev) and PostgreSQL.
 Timestamps are stored as ISO-8601 UTC text so both engines behave identically and
 ordering is lexicographic. Booleans are stored as integers (0/1).
 """
@@ -48,7 +48,6 @@ _TABLES = [
         status TEXT NOT NULL DEFAULT 'approved',
         version INTEGER NOT NULL DEFAULT 1,
         effective_date TEXT,
-        storage_path TEXT,
         created_at TEXT NOT NULL
     )
     """,
@@ -216,13 +215,22 @@ _TABLES = [
 ]
 
 _INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_passages_ws ON passages(workspace_id)",
+    "CREATE INDEX IF NOT EXISTS idx_passages_ws_document ON passages(workspace_id, document_id)",
     "CREATE INDEX IF NOT EXISTS idx_terms_ws ON terms(workspace_id)",
     "CREATE INDEX IF NOT EXISTS idx_facts_ws ON facts(workspace_id)",
-    "CREATE INDEX IF NOT EXISTS idx_findings_version ON findings(version_id)",
-    "CREATE INDEX IF NOT EXISTS idx_versions_item ON content_versions(content_item_id)",
-    "CREATE INDEX IF NOT EXISTS idx_items_ws ON content_items(workspace_id)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_ws ON audit_events(workspace_id)",
+    "CREATE INDEX IF NOT EXISTS idx_findings_version_workspace ON findings(version_id, workspace_id)",
+    "CREATE INDEX IF NOT EXISTS idx_versions_item_version ON content_versions(content_item_id, version_no)",
+    "CREATE INDEX IF NOT EXISTS idx_items_workspace_updated ON content_items(workspace_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_workspace_created ON audit_events(workspace_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_demo_sessions_created ON demo_sessions(created_at)",
+]
+
+_OBSOLETE_INDEXES = [
+    "DROP INDEX IF EXISTS idx_passages_ws",
+    "DROP INDEX IF EXISTS idx_findings_version",
+    "DROP INDEX IF EXISTS idx_versions_item",
+    "DROP INDEX IF EXISTS idx_items_ws",
+    "DROP INDEX IF EXISTS idx_audit_ws",
 ]
 
 
@@ -230,5 +238,7 @@ def create_schema(db: Database) -> None:
     pk = "BIGSERIAL PRIMARY KEY" if db.is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
     for ddl in _TABLES:
         db.execute(ddl.format(pk=pk))
+    for idx in _OBSOLETE_INDEXES:
+        db.execute(idx)
     for idx in _INDEXES:
         db.execute(idx)

@@ -1,4 +1,4 @@
-"""Thin database layer that speaks both SQLite (local dev) and Postgres (Supabase).
+"""Thin database layer that speaks both SQLite (local dev) and PostgreSQL.
 
 Design notes for readability:
   * All SQL in this project is written with ``?`` placeholders.

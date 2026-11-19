@@ -218,12 +218,12 @@ export default function NewSubmission() {
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-            Upload PDF / DOCX
+            Upload a file
           </button>
         </div>
         <p className="text-xs text-gray-500">
-          Uploads are read server-side. Scanned PDFs without selectable text are rejected with a
-          clear message rather than silently returning nothing.
+          Upload PDF, DOCX, TXT or Markdown. Scanned PDFs without selectable text are rejected
+          with a clear message rather than silently returning nothing.
         </p>
       </section>
     </div>

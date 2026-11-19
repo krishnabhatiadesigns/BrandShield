@@ -10,7 +10,7 @@ Stack, pipeline, schema, retrieval and validation.
 |---|---|---|
 | Frontend | React 18 + Vite 5 + Tailwind 3 | TypeScript, React Router 6 |
 | Backend | Python 3.13 + FastAPI | Typed Pydantic models, OpenAPI at `/docs` |
-| Database | SQLite (dev) / Supabase Postgres (prod) | One DDL template renders for both |
+| Database | SQLite (dev) / PostgreSQL (optional) | One DDL template renders for both |
 | LLM | Groq `openai/gpt-oss-120b` | JSON mode, server-side only |
 | Retrieval | `rank_bm25` (BM25Okapi) | Workspace-filtered before ranking |
 | Extraction | PyMuPDF (PDF), python-docx (DOCX), plain text | |
@@ -18,10 +18,10 @@ Stack, pipeline, schema, retrieval and validation.
 
 ### Why SQLite locally
 
-The database layer (`app/db.py`) speaks both SQLite and Postgres through one
+The database layer (`app/db.py`) speaks both SQLite and PostgreSQL through one
 interface. All SQL uses `?` placeholders, rewritten to `%s` for Postgres. This
-let the whole workflow be built and verified before Supabase credentials were
-available, with no code changes needed to switch.
+lets the same workflow run locally or against a generic PostgreSQL database
+without changing application queries.
 
 ---
 
@@ -157,15 +157,27 @@ the current status so an approver who re-runs does not lose their turn.
 
 ## Auth
 
-`app/auth.py`. Two paths, both resolved server-side:
+`app/auth.py` resolves demo sessions server-side:
 
 - **Demo sessions** — `POST /api/demo/session` with a role returns an opaque
-  token stored in `demo_sessions`, mapped to a real `memberships` row. Role checks
-  are identical to production.
-- **Supabase** — HS256 JWT verified with `SUPABASE_JWT_SECRET`, mapped to a
-  membership by email.
+  token stored in `demo_sessions`. The selected role is checked on protected
+  routes; `POST /api/logout` revokes the token.
+- Sessions expire after `DEMO_SESSION_TTL_HOURS` (12 hours by default). Expired
+  tokens are rejected, and stale rows are removed when a new demo session starts.
+- This is a demonstration flow, not production identity or account management:
+  visitors can select a demo role. Do not use it to protect confidential data.
 
 `require_role(...)` is a FastAPI dependency applied per route.
+
+## Configuration and persistence
+
+- `CORS_ORIGINS` must contain one or more exact origins. The API rejects `*`;
+  production deployments must configure their frontend origin explicitly.
+- SQLite is the local default. Set `DATABASE_URL` to a generic PostgreSQL URL
+  when using PostgreSQL; no provider-specific auth or storage service is used.
+- Uploaded guideline files are extracted in memory and are not persisted to
+  object storage. Content, findings and workflow events are stored in the
+  configured database.
 
 ---
 

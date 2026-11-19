@@ -10,6 +10,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,https://brand-shield-amber.vercel.app"
 
 
 def _load_env_files() -> None:
@@ -48,7 +49,7 @@ class Settings:
     def __init__(self) -> None:
         # --- database -------------------------------------------------------
         # DATABASE_URL wins. Otherwise we fall back to a local SQLite file.
-        # Postgres/Supabase URLs are normalised to the psycopg driver.
+        # PostgreSQL URLs are normalised to the psycopg driver.
         self.database_url: str = _env("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'brandshield.db'}"
 
         # --- LLM ------------------------------------------------------------
@@ -57,18 +58,15 @@ class Settings:
         self.groq_base_url: str = _env("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
         self.llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "25"))
 
-        # --- Supabase (optional: real auth + private storage) ---------------
-        self.supabase_url: str = _env("SUPABASE_URL")
-        self.supabase_anon_key: str = _env("SUPABASE_ANON_KEY")
-        self.supabase_service_key: str = _env("SUPABASE_SERVICE_ROLE_KEY")
-        self.supabase_jwt_secret: str = _env("SUPABASE_JWT_SECRET")
-        self.supabase_storage_bucket: str = _env("SUPABASE_STORAGE_BUCKET", "brand-docs")
-
         # --- app ------------------------------------------------------------
-        self.cors_origins: list[str] = [
-            o.strip() for o in _env("CORS_ORIGINS", "*").split(",") if o.strip()
-        ]
+        cors_origins = _env("CORS_ORIGINS", DEFAULT_CORS_ORIGINS) or DEFAULT_CORS_ORIGINS
+        self.cors_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+        if not self.cors_origins or "*" in self.cors_origins:
+            raise ValueError("CORS_ORIGINS must contain explicit origins; wildcard '*' is not allowed.")
         self.demo_workspace_slug: str = _env("DEMO_WORKSPACE_SLUG", "northwind-foods")
+        self.demo_session_ttl_hours: int = int(_env("DEMO_SESSION_TTL_HOURS", "12"))
+        if self.demo_session_ttl_hours < 1:
+            raise ValueError("DEMO_SESSION_TTL_HOURS must be at least 1.")
         self.seed_on_start: bool = _env("SEED_ON_START", "true").lower() in {"1", "true", "yes"}
 
     @property

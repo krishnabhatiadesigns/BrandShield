@@ -89,6 +89,9 @@ function FindingCard({
 
       <h3 className="mt-2 text-sm font-semibold text-charcoal">{finding.rule}</h3>
       <p className="mt-1 text-sm text-gray-700">{finding.explanation}</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Confidence: <strong className="font-semibold">{Math.round(finding.confidence * 100)}%</strong>
+      </p>
 
       <div className="mt-3 rounded-lg bg-gray-50 p-2.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
@@ -307,6 +310,27 @@ export default function ReviewScreen() {
 
   const isManager = me?.role === 'manager' || me?.role === 'admin'
   const isApprover = me?.role === 'approver' || me?.role === 'admin'
+  const returnToManagerPrefix = 'Sent back to the manager: '
+  const returnToCreatorPrefix = 'Sent back to the creator: '
+  const returnNoteTarget =
+    status === 'Manager Review'
+      ? 'manager'
+      : status === 'Changes Required'
+        ? 'creator'
+        : null
+  const returnNotePrefix =
+    returnNoteTarget === 'manager'
+      ? returnToManagerPrefix
+      : returnNoteTarget === 'creator'
+        ? returnToCreatorPrefix
+        : null
+  const canViewReturnNote =
+    (returnNoteTarget === 'manager' && isManager) ||
+    (returnNoteTarget === 'creator' && me?.role === 'creator')
+  const returnNotes =
+    canViewReturnNote && returnNotePrefix
+      ? item.comments.filter((comment) => comment.body.startsWith(returnNotePrefix))
+      : []
 
   // Acting on findings is only allowed when the version is actually waiting on
   // you. Otherwise the buttons would contradict the "waiting on X" banner.
@@ -424,6 +448,32 @@ export default function ReviewScreen() {
           </span>
         )}
       </div>
+
+      {returnNotes.length > 0 && returnNotePrefix && (
+        <section
+          aria-labelledby="return-notes-title"
+          className="card border-amber-200 bg-amber-50/60 p-4"
+        >
+          <h2
+            id="return-notes-title"
+            className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-900"
+          >
+            {returnNoteTarget === 'manager'
+              ? 'Came back for re-review'
+              : 'Sent back for changes'}
+          </h2>
+          <ul className="space-y-2">
+            {returnNotes.map((comment) => (
+              <li key={comment.id} className="rounded-lg border border-amber-200 bg-white/70 p-3">
+                <div className="text-xs font-semibold text-amber-900">{comment.author}</div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-amber-950">
+                  {comment.body.slice(returnNotePrefix.length)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* --- actions, grouped and named by destination --- */}
       <div className="card space-y-3 p-4">

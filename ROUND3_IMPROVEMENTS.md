@@ -130,3 +130,15 @@ Both produce numbers a designer can act on:
 The check accepts hex colours, not image files. Pixel sampling from an arbitrary
 image needs region selection to be meaningful, and OCR was deliberately skipped.
 The maths is real; the input path is simpler than planned.
+
+---
+
+## Round 3 verification
+
+On 18 November 2026, `backend/tests/test_round3_readiness.py` added regression
+coverage for citation and suggestion validation, context-preserving revisions
+(including overlap and stale-span handling), visual checks, retrieval isolation,
+and the complete creator → manager → approver journey. `backend/tests/test_sessions.py`
+covers session expiry, logout revocation and CORS allowlisting. The complete
+backend suite contains 20 tests. The frontend TypeScript check and production
+build also pass.

@@ -244,8 +244,8 @@ export default function Landing() {
         </section>
 
         <p className="mt-10 text-center text-xs text-gray-500">
-          Optional email sign-up is supported through Supabase Auth, but the demo path above
-          never requires it.
+          This demo uses instant role-based access. Account sign-up and team invitations are not
+          part of the current demo.
         </p>
       </div>
 

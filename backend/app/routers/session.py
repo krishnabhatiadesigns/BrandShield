@@ -1,9 +1,9 @@
 """Session and health endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Response
 
-from ..auth import Principal, create_demo_session, get_principal
+from ..auth import Principal, create_demo_session, get_principal, revoke_demo_session
 from ..config import get_settings
 from ..db import Database, get_db
 from ..models import DemoSessionRequest, MeResponse, SessionResponse
@@ -18,6 +18,16 @@ def demo_session(
     """Enter the pre-seeded demo workspace instantly. No sign-in required."""
     data = create_demo_session(db, payload.role)
     return SessionResponse(**data)
+
+
+@router.post("/logout", status_code=204)
+def logout(
+    authorization: str | None = Header(default=None),
+    x_demo_token: str | None = Header(default=None),
+    db: Database = Depends(get_db),
+) -> Response:
+    revoke_demo_session(db, authorization, x_demo_token)
+    return Response(status_code=204)
 
 
 @router.get("/me", response_model=MeResponse)

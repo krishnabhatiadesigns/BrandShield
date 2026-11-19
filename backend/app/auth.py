@@ -1,23 +1,8 @@
-"""Authentication and role enforcement.
-
-Two paths, both resolved server-side:
-
-  * Demo sessions: the landing page calls ``POST /api/demo/session`` with a role and
-    receives an opaque token. The token maps to a real membership row, so role
-    checks are identical to production.
-  * Supabase Auth (optional): a Supabase access token is verified and mapped to a
-    membership by email. If Supabase is not configured this path is simply unused.
-
-Roles are enforced here, not in the UI. Every router depends on ``require_role``.
-"""
+"""Demo-session authentication and server-side role enforcement."""
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
-import logging
-import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from fastapi import Depends, Header, HTTPException, status
@@ -25,8 +10,6 @@ from fastapi import Depends, Header, HTTPException, status
 from .config import get_settings
 from .db import Database, get_db
 from .seed import DEMO_MEMBERS, DEMO_SLUG, now_iso, new_demo_token
-
-log = logging.getLogger("brandshield.auth")
 
 ROLE_RANK = {"creator": 1, "manager": 2, "approver": 3, "admin": 4}
 
@@ -57,6 +40,7 @@ def _demo_workspace(db: Database) -> dict:
 def create_demo_session(db: Database, role: str) -> dict:
     if role not in {"creator", "manager", "approver"}:
         raise HTTPException(status_code=400, detail="Unknown demo role.")
+    db.execute("DELETE FROM demo_sessions WHERE created_at < ?", (_session_cutoff(),))
     ws = _demo_workspace(db)
     member = next(m for m in DEMO_MEMBERS if m[3] == role)
     token = new_demo_token()
@@ -74,29 +58,17 @@ def create_demo_session(db: Database, role: str) -> dict:
     }
 
 
-def _verify_supabase_jwt(token: str) -> dict | None:
-    """Verify a Supabase HS256 JWT using the project's JWT secret."""
-    settings = get_settings()
-    if not settings.supabase_jwt_secret:
-        return None
-    try:
-        import base64
+def _session_cutoff() -> str:
+    ttl = get_settings().demo_session_ttl_hours
+    return (datetime.now(timezone.utc) - timedelta(hours=ttl)).replace(microsecond=0).isoformat()
 
-        header_b64, payload_b64, sig_b64 = token.split(".")
-        signing_input = f"{header_b64}.{payload_b64}".encode()
-        expected = hmac.new(
-            settings.supabase_jwt_secret.encode(), signing_input, hashlib.sha256
-        ).digest()
-        actual = base64.urlsafe_b64decode(sig_b64 + "=" * (-len(sig_b64) % 4))
-        if not hmac.compare_digest(expected, actual):
-            return None
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4)))
-        if payload.get("exp") and int(payload["exp"]) < int(time.time()):
-            return None
-        return payload
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Supabase token verification failed: %s", exc)
-        return None
+
+def _extract_token(authorization: str | None, demo_token: str | None) -> str | None:
+    if demo_token:
+        return demo_token
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip() or None
+    return None
 
 
 def resolve_principal(
@@ -104,9 +76,7 @@ def resolve_principal(
     authorization: str | None,
     demo_token: str | None,
 ) -> Principal:
-    token = demo_token
-    if not token and authorization and authorization.lower().startswith("bearer "):
-        token = authorization[7:].strip()
+    token = _extract_token(authorization, demo_token)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -118,9 +88,9 @@ def resolve_principal(
         """
         SELECT s.token, s.role, s.display_name, s.workspace_id, w.name AS workspace_name
         FROM demo_sessions s JOIN workspaces w ON w.id = s.workspace_id
-        WHERE s.token = ?
+        WHERE s.token = ? AND s.created_at >= ?
         """,
-        (token,),
+        (token, _session_cutoff()),
     )
     if row:
         return Principal(
@@ -132,37 +102,20 @@ def resolve_principal(
             is_demo=True,
         )
 
-    # --- supabase session --------------------------------------------------
-    payload = _verify_supabase_jwt(token)
-    if payload:
-        email = payload.get("email")
-        if email:
-            member = db.query_one(
-                """
-                SELECT m.user_id, m.display_name, m.role, m.workspace_id, w.name AS workspace_name
-                FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
-                WHERE lower(m.email) = lower(?)
-                """,
-                (email,),
-            )
-            if member:
-                return Principal(
-                    user_id=member["user_id"],
-                    display_name=member["display_name"],
-                    role=member["role"],
-                    workspace_id=int(member["workspace_id"]),
-                    workspace_name=member["workspace_name"],
-                    is_demo=False,
-                )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account is not a member of any workspace yet.",
-        )
-
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="That session has expired. Choose a demo role to start again.",
     )
+
+
+def revoke_demo_session(
+    db: Database,
+    authorization: str | None,
+    demo_token: str | None,
+) -> None:
+    token = _extract_token(authorization, demo_token)
+    if token:
+        db.execute("DELETE FROM demo_sessions WHERE token = ?", (token,))
 
 
 def get_principal(

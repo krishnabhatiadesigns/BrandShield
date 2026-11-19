@@ -2,7 +2,7 @@
 
 An honest list of what works, what is partial, and what is not built.
 
-Last verified: 2026-11-15 against a running local server.
+Last verified: 2026-11-18 against the local test suite and deployed health endpoint.
 
 ---
 
@@ -39,6 +39,8 @@ Last verified: 2026-11-15 against a running local server.
 ### Resilience
 - If the LLM fails, times out or is unconfigured, deterministic findings still
   return and the UI states exactly what happened.
+- Demo sessions expire after 12 hours by default; logout revokes the session
+  server-side. CORS rejects wildcard origins.
 - Re-running a check preserves workflow status and prior decisions.
 - `/health` endpoint for keep-warm pings; the frontend shows "waking up the
   server" while polling it.
@@ -69,12 +71,12 @@ Last verified: 2026-11-15 against a running local server.
 | Feature | Limitation |
 |---|---|
 | **Decision preservation on re-run** | Decisions survive only for findings that reappear identically (same rule + span). If the LLM rewords a finding, it returns as `pending`. Deterministic findings are stable and always keep decisions. |
-| **Supabase Auth** | JWT verification is implemented, but there is no sign-up UI. The demo path never needs it. |
-| **Supabase Storage** | Schema has `storage_path`, but uploads are parsed in memory and not persisted to a bucket. |
+| **Authentication** | The demo lets visitors select a role; there is no persistent real-user account lifecycle. Do not use it to protect confidential production data. |
+| **Guideline upload persistence** | Files are parsed in memory and are not persisted to object storage. |
 | **Image upload** | Visual checks accept hex colours, not image files. No pixel sampling from an uploaded image. |
 | **OCR** | Not implemented. Scanned PDFs are rejected with a clear message. |
-| **Deployment** | Configs prepared, but **not deployed**. No public URL yet. |
-| **Test suite** | Only a placeholder `tests/__init__.py`. The 20-item labelled set and precision/recall report are **not** written. |
+| **Deployment** | Public frontend and API are deployed. Health checks passed on 2026-11-18; retest both after any deployment/configuration change. |
+| **Test suite** | 20 automated backend tests cover regression, workflow, session and retrieval behavior. The planned 20-item labelled accuracy set and precision/recall report are **not** written. |
 
 ---
 
@@ -85,6 +87,9 @@ Last verified: 2026-11-15 against a running local server.
 - Multi-workspace UI (the data model supports it; the UI is single-workspace).
 - Real publishing integration (by design — approval is terminal).
 - Competitor mention detection beyond the prohibited-terms list.
+- Hybrid/vector retrieval, calibrated confidence scoring and cross-document
+  contradiction detection; these need a labelled evaluation set before they
+  can be validated or claimed as product capabilities.
 
 ---
 

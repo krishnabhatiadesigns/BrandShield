@@ -23,7 +23,7 @@ python-docx==1.2.0
 pillow==13.0.0
 numpy==2.2.6
 
-# Postgres / Supabase (optional; SQLite works without it)
+# PostgreSQL (optional; SQLite works without it)
 psycopg[binary]==3.3.9
 
 # Tests

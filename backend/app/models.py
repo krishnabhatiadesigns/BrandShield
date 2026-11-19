@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Role = Literal["creator", "manager", "approver", "admin"]
 ContentType = Literal["social", "ad", "email", "document"]
@@ -42,6 +42,20 @@ class ContentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content_type: ContentType
     body: str = Field(min_length=1, max_length=20000)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("The title cannot be blank.")
+        return value.strip()
+
+    @field_validator("body")
+    @classmethod
+    def body_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("The draft cannot be blank.")
+        return value
 
 
 class SampleInfo(BaseModel):
@@ -125,6 +139,13 @@ class FindingDecisionRequest(BaseModel):
 
 class CommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("body")
+    @classmethod
+    def body_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A comment cannot be blank.")
+        return value.strip()
 
 
 class CommentOut(BaseModel):

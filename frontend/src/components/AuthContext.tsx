@@ -75,8 +75,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(() => {
+    setError(null)
+    const revocation = api.logout().then(
+      () => null,
+      (err) =>
+        err instanceof Error
+          ? `Signed out on this device, but server revocation failed: ${err.message}`
+          : 'Signed out on this device, but the server session could not be revoked.',
+    )
     setToken(null)
     setMe(null)
+    setLoading(false)
+    void revocation.then((revocationError) => {
+      if (revocationError) setError(revocationError)
+    })
   }, [])
 
   const value = useMemo(

@@ -72,6 +72,8 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
 
+  logout: () => request<void>('/api/logout', { method: 'POST' }),
+
   me: () => request<Me>('/api/me'),
 
   samples: () => request<SampleInfo[]>('/api/samples'),
