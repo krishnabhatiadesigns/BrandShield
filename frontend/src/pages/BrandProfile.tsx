@@ -19,7 +19,7 @@ export default function BrandProfilePage() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const canEdit = me?.role === 'manager' || me?.role === 'admin'
+  const canEdit = me?.role === 'manager'
 
   const load = useCallback(async () => {
     setError(null)
@@ -399,7 +399,7 @@ function CompanyContextTab({
           </button>
         ) : (
           <span className="text-xs text-gray-500">
-            Only managers and admins can edit company context.
+            Only the Manager role can edit brand details.
           </span>
         )}
       </div>

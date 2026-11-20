@@ -203,10 +203,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enterDemo = useCallback(async (role: 'creator' | 'manager' | 'approver') => {
     setError(null)
-    if (!demoAuthEnabled) {
-      setError('Demo sign-in is disabled for this deployment.')
-      return false
-    }
     setWaking(true)
     const started = Date.now()
     let healthy = false

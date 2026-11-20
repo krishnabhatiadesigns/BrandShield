@@ -92,11 +92,6 @@ class Settings:
         self.demo_session_ttl_hours: int = int(_env("DEMO_SESSION_TTL_HOURS", "12"))
         if self.demo_session_ttl_hours < 1:
             raise ValueError("DEMO_SESSION_TTL_HOURS must be at least 1.")
-        self.demo_auth_enabled: bool = _env("DEMO_AUTH_ENABLED", "true").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
         self.allow_organization_creation: bool = _env(
             "ALLOW_ORGANIZATION_CREATION", "false"
         ).lower() in {"1", "true", "yes"}

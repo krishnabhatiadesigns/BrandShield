@@ -61,6 +61,20 @@ def test_expired_session_is_rejected_and_cleaned_on_new_login(session_client):
     assert db.query_one("SELECT COUNT(*) AS n FROM demo_sessions")["n"] == 1
 
 
+def test_demo_sessions_work_when_legacy_toggle_is_false(session_client, monkeypatch):
+    _, client = session_client
+    monkeypatch.setenv("DEMO_AUTH_ENABLED", "false")
+    get_settings.cache_clear()
+
+    created = client.post("/api/demo/session", json={"role": "manager"})
+
+    assert created.status_code == 200
+    token = created.json()["token"]
+    current_user = client.get("/api/me", headers={"X-Demo-Token": token})
+    assert current_user.status_code == 200
+    assert current_user.json()["role"] == "manager"
+
+
 def test_cors_rejects_wildcard_and_accepts_explicit_origins(monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", "*")
     with pytest.raises(ValueError, match="explicit origins"):

@@ -60,10 +60,18 @@ def test_company_context_is_saved_and_forwarded_to_ai(workspace):
     assert analyse.call_args.args[4] == context
 
 
-def test_only_manager_can_update_company_context(workspace):
+@pytest.mark.parametrize(
+    ("user_id", "display_name", "role"),
+    [
+        ("creator-id", "Creator", "creator"),
+        ("approver-id", "Approver", "approver"),
+        ("admin-id", "Admin", "admin"),
+    ],
+)
+def test_only_manager_can_update_company_context(workspace, user_id, display_name, role):
     _, app = workspace
     app.dependency_overrides[get_principal] = lambda: Principal(
-        "creator-id", "Creator", "creator", 1, "Acme", False
+        user_id, display_name, role, 1, "Acme", False
     )
 
     response = TestClient(app).put(

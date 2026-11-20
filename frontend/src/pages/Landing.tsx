@@ -400,6 +400,11 @@ export default function Landing() {
             ))}
           </div>
         )}
+        {demoEnabled && (
+          <p className="mt-3 text-center text-sm text-gray-600">
+            Only the Manager role can add or update brand details in the Brand profile.
+          </p>
+        )}
 
         <section className="mt-12">
           <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-gray-500">

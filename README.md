@@ -73,10 +73,10 @@ npm run dev
 ```
 
 Open http://localhost:5173. The anonymous demo role selector is enabled by
-default; set `VITE_DEMO_AUTH_ENABLED=false` only when you want to hide it.
-Visitors choose a demo persona (no employee account or password) to enter the
-fictional seeded workspace. Vercel rewrites app routes to the SPA entry point so
-deep links work when opened directly.
+default and always available. Visitors choose a demo persona (no employee
+account or password) to enter the fictional seeded workspace. Only the Manager
+role can add or update brand details. Vercel rewrites app routes to the SPA
+entry point so deep links work when opened directly.
 
 ### Business sign-in with Supabase
 
@@ -95,7 +95,6 @@ Set these backend variables in the hosting provider:
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only key used to invite, ban and unban users. Never put this in frontend variables. |
 | `SUPABASE_JWT_SECRET` | Optional legacy HS256 verification secret. Prefer Supabase's asymmetric JWKS keys and leave blank when possible. |
 | `APP_FRONTEND_URL` | Exact frontend origin used for invitation redirects. |
-| `DEMO_AUTH_ENABLED` | Defaults to `true` for the public hackathon demo; set to `false` to disable demo personas. |
 
 Set these frontend build variables:
 
@@ -104,11 +103,10 @@ Set these frontend build variables:
 | `VITE_SUPABASE_URL` | The same Supabase project URL. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (or legacy anon key). This key is safe for browser use. |
 | `VITE_API_URL` | Backend origin when the API is hosted separately. |
-| `VITE_DEMO_AUTH_ENABLED` | Optional. Set to `false` to hide public demo personas. |
 | `VITE_ORGANIZATION_CREATION_ENABLED` | Exposes first-organization onboarding; only useful when backend onboarding is enabled. |
 
 For local Supabase sign-in, create `frontend/.env.local` with the frontend
-variables and set `DEMO_AUTH_ENABLED=false` in the backend `.env`.
+variables.
 For controlled self-service organization setup, set
 `ALLOW_ORGANIZATION_CREATION=true` on the backend and
 `VITE_ORGANIZATION_CREATION_ENABLED=true` in the frontend build environment.
@@ -158,7 +156,6 @@ Copy `.env.example` to `.env` in the repo root. `.env` is gitignored.
 | `CORS_ORIGINS` | no | Comma-separated exact allowed origins; `*` is rejected. |
 | `DEMO_WORKSPACE_SLUG` | no | Defaults to `northwind-foods`. |
 | `DEMO_SESSION_TTL_HOURS` | no | Demo-session lifetime; defaults to 12 hours. |
-| `DEMO_AUTH_ENABLED` | no | Local example enables demo role selection; disable in production. |
 | `SUPABASE_URL` | no | Enables Supabase access-token verification when configured. |
 | `SUPABASE_JWT_SECRET` | no | Optional verification key for legacy HS256 JWTs. |
 | `SUPABASE_SERVICE_ROLE_KEY` | no | Server-only member invitations and activation changes. |
@@ -242,19 +239,19 @@ If the LLM fails or times out, steps 2, 3 and 6 still run and the UI says so.
 
 ## Roles
 
-| Role | Can author | Can review | Can approve |
-|---|---|---|---|
-| Creator | ✅ | — | — |
-| Manager | — | ✅ | — |
-| Approver | — | — | ✅ |
-| Admin | ✅ | ✅ | ✅ |
+| Role | Can author | Can review | Can approve | Can manage brand profile |
+|---|---|---|---|---|
+| Creator | ✅ | — | — | — |
+| Manager | — | ✅ | — | ✅ |
+| Approver | — | — | ✅ | — |
+| Admin | ✅ | ✅ | ✅ | — |
 
 Roles are enforced **in the backend**, not only the UI. Managers and approvers
 cannot create submissions, so the person who writes a draft is never the person
-who approves it.
+who approves it. Only the Manager role can add or update brand profile details.
 
-The local demo role-selection flow is not production identity management;
-anyone can select a demo role when demo access is enabled. Business accounts
+The public demo role-selection flow is not production identity management;
+anyone can choose a role in the fictional seeded workspace. Business accounts
 use Supabase-verified access tokens and active workspace membership records.
 Supabase manages passwords, recovery and email verification; BrandShield keeps
 roles in its own membership table. Demo sessions expire after 12 hours and are
@@ -267,7 +264,7 @@ legacy organizations.
 
 ### Structured brand policy
 
-Managers and admins can add policy rules in the Brand profile, choose category,
+Managers can add policy rules in the Brand profile, choose category,
 severity, mandatory/advisory status, content applicability, effective date,
 examples, and an optional approved source passage. Updates are preserved as
 immutable numbered versions. Only enabled rules matching the submission type

@@ -13,7 +13,7 @@ from jwt.exceptions import PyJWKClientConnectionError
 from app.auth import Principal, resolve_principal
 from app.config import get_settings
 from app.db import Database, get_db
-from app.routers import members, session
+from app.routers import members
 from app.schema import create_schema
 
 SUPABASE_URL = "https://example.supabase.co"
@@ -47,7 +47,6 @@ def _token(
 def auth_database(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", SUPABASE_URL)
     monkeypatch.setenv("SUPABASE_JWT_SECRET", JWT_SECRET)
-    monkeypatch.setenv("DEMO_AUTH_ENABLED", "false")
     get_settings.cache_clear()
     db = Database("sqlite:///:memory:")
     create_schema(db)
@@ -397,16 +396,6 @@ def test_admin_member_list_hides_seeded_demo_accounts(auth_database):
 
     assert response.status_code == 200
     assert [member["user_id"] for member in response.json()] == ["admin-user"]
-
-
-def test_demo_sign_in_is_disabled_by_default_for_business_deployments(auth_database):
-    app = FastAPI()
-    app.include_router(session.router)
-    app.dependency_overrides[get_db] = lambda: auth_database
-
-    response = TestClient(app).post("/api/demo/session", json={"role": "creator"})
-
-    assert response.status_code == 404
 
 
 def test_schema_migration_adds_membership_active_flag_to_existing_database():

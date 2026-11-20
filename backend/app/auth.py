@@ -99,11 +99,6 @@ def _demo_workspace(db: Database) -> dict:
 
 
 def create_demo_session(db: Database, role: str) -> dict:
-    if not get_settings().demo_auth_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Demo sign-in is disabled.",
-        )
     if role not in {"creator", "manager", "approver"}:
         raise HTTPException(status_code=400, detail="Unknown demo role.")
     db.execute("DELETE FROM demo_sessions WHERE created_at < ?", (_session_cutoff(),))
@@ -170,11 +165,6 @@ def resolve_principal(
         )
 
     if demo_token:
-        if not get_settings().demo_auth_enabled:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Demo sign-in is disabled.",
-            )
         row = db.query_one(
             """
             SELECT s.token, s.role, s.display_name, s.workspace_id, w.name AS workspace_name

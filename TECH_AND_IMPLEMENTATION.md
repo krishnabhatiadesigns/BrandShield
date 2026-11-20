@@ -176,8 +176,9 @@ the current status so an approver who re-runs does not lose their turn.
   change roles and deactivate/reactivate accounts. Supabase sends invitation and
   recovery messages; the service-role key is server-only.
 - **Demo sessions** — `POST /api/demo/session` creates an opaque, expiring token
-  only when `DEMO_AUTH_ENABLED=true`. Demo access defaults off. `POST /api/logout`
-  revokes demo sessions; Supabase sessions are cleared through its client.
+  for one of the public demo roles and enters the seeded fictional workspace
+  without an employee account. `POST /api/logout` revokes demo sessions;
+  Supabase sessions are cleared through its client.
 - `ALLOW_ORGANIZATION_CREATION=true` permits a verified account without a
   workspace membership to create its first organization and become its admin.
   The organization creator can create brands; members must be invited to each

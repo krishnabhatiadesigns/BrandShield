@@ -110,7 +110,7 @@ def get_profile(
 @router.post("/rules", response_model=GuidelineRuleOut, status_code=status.HTTP_201_CREATED)
 def create_guideline_rule(
     payload: GuidelineRuleCreate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> GuidelineRuleOut:
     ws = principal.workspace_id
@@ -170,7 +170,7 @@ def create_guideline_rule(
 def update_guideline_rule(
     rule_id: int,
     payload: GuidelineRuleUpdate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> GuidelineRuleOut:
     ws = principal.workspace_id
@@ -273,7 +273,7 @@ def list_guideline_rule_versions(
 @router.put("/company-context", status_code=status.HTTP_204_NO_CONTENT)
 def update_company_context(
     payload: CompanyContextUpdate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> None:
     ts = now_iso()
@@ -299,7 +299,7 @@ def update_company_context(
 @router.post("/terms", response_model=TermOut, status_code=status.HTTP_201_CREATED)
 def add_term(
     payload: TermCreate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> TermOut:
     db.insert(
@@ -320,7 +320,7 @@ def add_term(
 @router.post("/facts", response_model=FactOut, status_code=status.HTTP_201_CREATED)
 def add_fact(
     payload: FactCreate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> FactOut:
     db.insert(
@@ -341,7 +341,7 @@ def add_fact(
 @router.post("/palette", response_model=PaletteOut, status_code=status.HTTP_201_CREATED)
 def add_palette(
     payload: PaletteCreate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> PaletteOut:
     db.insert(
@@ -359,7 +359,7 @@ def add_palette(
 @router.post("/passages", response_model=PassageOut, status_code=status.HTTP_201_CREATED)
 def add_passage(
     payload: PassageCreate,
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> PassageOut:
     ts = now_iso()
@@ -392,7 +392,7 @@ def add_passage(
 async def upload_guideline(
     file: UploadFile = File(...),
     title: str = "",
-    principal: Principal = Depends(require_role("manager", "admin")),
+    principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> list[PassageOut]:
     """Ingest a guideline PDF into approved passages, one passage per page."""
