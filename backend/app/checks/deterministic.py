@@ -7,7 +7,7 @@ returns findings even when the LLM is unavailable. Each check returns
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from ..text import find_all, sentence_containing, split_sentences
@@ -29,6 +29,7 @@ class BrandContext:
     assets: list[dict]
     required_disclaimer: str | None
     content_type: str
+    rules: list[dict] = field(default_factory=list)
 
     def passage_for_section(self, section: str) -> int | None:
         for p in self.passages:

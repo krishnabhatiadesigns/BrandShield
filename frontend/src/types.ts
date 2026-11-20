@@ -21,6 +21,23 @@ export interface Me {
   llm_enabled: boolean
 }
 
+export interface WorkspaceMember {
+  user_id: string
+  email: string | null
+  display_name: string
+  role: Role
+  is_active: boolean
+  created_at: string
+}
+
+export interface Workspace {
+  id: number
+  name: string
+  role: Role
+  organization_id: number
+  organization_name: string
+}
+
 export interface Finding {
   id: number
   category: string
@@ -33,6 +50,10 @@ export interface Finding {
   source_passage_id: number | null
   source_quote: string | null
   source_title: string | null
+  source_rule_id: number | null
+  source_rule_version: number | null
+  source_rule_title: string | null
+  source_rule_text: string | null
   evidence_status: EvidenceStatus
   confidence: number
   suggestion: string | null
@@ -149,7 +170,38 @@ export interface BrandProfile {
   terms: Term[]
   facts: Fact[]
   palette: PaletteColor[]
+  rules: GuidelineRule[]
   disclaimers: Record<string, string | null>
+}
+
+export interface GuidelineRule {
+  id: number
+  category: 'tone' | 'messaging' | 'claim' | 'terminology' | 'fact' | 'disclaimer' | 'visual' | 'logo' | 'typography' | 'other'
+  title: string
+  description: string
+  good_example: string | null
+  bad_example: string | null
+  severity: Severity
+  mandatory: boolean
+  content_types: ContentType[]
+  source_passage_id: number | null
+  enabled: boolean
+  version: number
+  effective_date: string
+}
+
+export interface GuidelineRulePayload {
+  category: GuidelineRule['category']
+  title: string
+  description: string
+  good_example: string | null
+  bad_example: string | null
+  severity: Severity
+  mandatory: boolean
+  content_types: ContentType[]
+  source_passage_id: number | null
+  enabled: boolean
+  effective_date?: string
 }
 
 export interface HistoryVersion {
@@ -192,4 +244,12 @@ export interface VisualCheckResponse {
     delta_e: number
     on_brand: boolean
   }[]
+  image?: {
+    filename: string
+    format: string
+    width: number
+    height: number
+    colors: { hex: string; percentage: number }[]
+  }
+  limitations?: string[]
 }

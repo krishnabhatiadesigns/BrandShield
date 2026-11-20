@@ -10,6 +10,9 @@ import Landing from './pages/Landing'
 import NewSubmission from './pages/NewSubmission'
 import Queue from './pages/Queue'
 import ReviewScreen from './pages/ReviewScreen'
+import SetPassword from './pages/SetPassword'
+import TeamAdmin from './pages/TeamAdmin'
+import Operations from './pages/Operations'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -24,10 +27,17 @@ function ApproverOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { me } = useAuth()
+  if (me?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/set-password" element={<SetPassword />} />
       <Route
         element={
           <Protected>
@@ -41,6 +51,18 @@ function AppRoutes() {
         <Route path="/approval/:id" element={<ApprovalScreen />} />
         <Route path="/queue" element={<Queue />} />
         <Route path="/brand" element={<BrandProfilePage />} />
+        <Route
+          path="/operations"
+          element={<Operations />}
+        />
+        <Route
+          path="/team"
+          element={
+            <AdminOnly>
+              <TeamAdmin />
+            </AdminOnly>
+          }
+        />
         <Route
           path="/history"
           element={

@@ -29,13 +29,17 @@ Rules you must follow:
    directly contradicts it, in which case use "contradicted".
 4. source_passage_id must be the id of an approved passage you were given, or null.
    Never invent an id.
-5. Suggestions must change only the problematic phrase, keep the author's intent,
+5. You may cite a provided brand rule with source_rule_id for a non-factual policy
+   mismatch. Factual support or contradiction still requires an approved passage.
+   Never invent a rule id. A rule without a source passage is policy guidance, not
+   proof for a factual claim.
+6. Suggestions must change only the problematic phrase, keep the author's intent,
    use approved terminology, and must not introduce new unverified claims.
-6. Do not repeat issues already listed in DETERMINISTIC FINDINGS.
-7. Company context is background guidance, not evidence. Do not cite it or use it
+7. Do not repeat issues already listed in DETERMINISTIC FINDINGS.
+9. Company context is background guidance, not evidence. Do not cite it or use it
    to label a factual claim supported or contradicted; those labels require an
    approved passage. It may guide company-specific tone and messaging feedback.
-8. Return JSON only, matching the schema exactly. No prose, no markdown fences.
+10. Return JSON only, matching the schema exactly. No prose, no markdown fences.
 
 Severity guide: high = factual/legal/brand-breaking; medium = tone or messaging
 drift; low = style polish."""
@@ -44,6 +48,9 @@ USER_TEMPLATE = """CONTENT TYPE: {content_type}
 
 COMPANY CONTEXT (background guidance; not evidence):
 {company_context}
+
+ACTIVE BRAND RULES (id | version | category | severity | mandatory/advisory | title | description | source passage id):
+{rules}
 
 DRAFT:
 <<<DRAFT
@@ -60,12 +67,13 @@ Return JSON of this exact shape:
 {{
   "findings": [
     {{
-      "category": "tone|messaging|claim|terminology|fact|disclaimer|visual",
+      "category": "tone|messaging|claim|terminology|fact|disclaimer|visual|logo|typography|other",
       "severity": "low|medium|high",
       "affected_text": "exact substring of the draft",
       "rule": "short rule name",
       "explanation": "why this matters, referencing the approved source",
       "source_passage_id": 12,
+      "source_rule_id": null,
       "evidence_status": "supported|contradicted|unsupported|needs_verification",
       "confidence": 0.0,
       "suggestion": "replacement text for the affected phrase, or null"
@@ -106,6 +114,7 @@ def analyse(
     passages: list[dict[str, Any]],
     existing: list[str],
     company_context: str = "",
+    rules: list[dict[str, Any]] | None = None,
 ) -> LLMResult:
     settings = get_settings()
     if not settings.llm_enabled:
@@ -119,6 +128,12 @@ def analyse(
         f"{p['id']} | {p['source']} | {p.get('section') or '-'} | {p['text']}" for p in passages
     ) or "(no approved passages matched)"
     existing_block = "\n".join(f"- {e}" for e in existing) or "(none)"
+    rules_block = "\n".join(
+        f"{r['id']} | {r['current_version']} | {r['category']} | {r['severity']} | "
+        f"{'mandatory' if r['mandatory'] else 'advisory'} | {r['title']} | "
+        f"{r['description']} | {r.get('source_passage_id') or '-'}"
+        for r in rules or []
+    ) or "(none)"
 
     payload = {
         "model": settings.groq_model,
@@ -135,6 +150,7 @@ def analyse(
                     passages=passage_block,
                     existing=existing_block,
                     company_context=company_context or "(none provided)",
+                    rules=rules_block,
                 ),
             },
         ],

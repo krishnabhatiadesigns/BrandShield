@@ -20,6 +20,10 @@ class FindingDraft:
     evidence_status: EvidenceStatus
     suggestion: str | None = None
     source_passage_id: int | None = None
+    source_rule_id: int | None = None
+    source_rule_version: int | None = None
+    source_rule_title: str | None = None
+    source_rule_text: str | None = None
     confidence: float = 0.6
     span_start: int | None = None
     span_end: int | None = None

@@ -104,16 +104,32 @@ function FindingCard({
 
       <div className="mt-2 rounded-lg border border-brand-100 bg-brand-50/60 p-2.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">
-          Approved source
+          Evidence and source
         </div>
-        {finding.source_quote ? (
+        {finding.source_rule_title && (
+          <>
+            <p className="mt-0.5 text-[13px] font-semibold text-brand-900">
+              {finding.source_rule_title} · version {finding.source_rule_version}
+            </p>
+            <p className="mt-1 text-[13px] text-brand-900">{finding.source_rule_text}</p>
+          </>
+        )}
+        {finding.source_quote && (
           <>
             <p className="mt-0.5 text-[13px] italic text-brand-900">
               “{finding.source_quote}”
             </p>
             <p className="mt-1 text-[11px] text-brand-700">{finding.source_title}</p>
           </>
-        ) : (
+        )}
+        {finding.source_rule_title && (
+          <p className="mt-1 text-[11px] text-brand-700">
+            Structured brand policy · {finding.evidence_status === 'needs_verification'
+              ? 'requires human verification'
+              : 'policy-backed'}
+          </p>
+        )}
+        {!finding.source_quote && !finding.source_rule_title && (
           <p className="mt-0.5 text-[13px] font-medium text-purple-800">
             Needs human verification — no approved source supports this claim.
           </p>

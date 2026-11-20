@@ -1,0 +1,8 @@
+[
+  {"id":"term-1","body":"Our product is cheap and may be 100% guaranteed.","expected":["cheap","guaranteed"],"category":"synthetic_regression"},
+  {"id":"term-2","body":"We offer a dependable service for families.","expected":[],"category":"synthetic_regression"},
+  {"id":"claim-1","body":"Guaranteed results in 30 days.","expected":["Guaranteed"],"category":"synthetic_regression"},
+  {"id":"claim-2","body":"We help customers choose confidently.","expected":[],"category":"synthetic_regression"},
+  {"id":"evidence-1","body":"The product is clinically proven.","expected":["clinically proven"],"category":"synthetic_regression"},
+  {"id":"evidence-2","body":"Our team provides practical support.","expected":[],"category":"synthetic_regression"}
+]

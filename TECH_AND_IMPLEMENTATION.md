@@ -103,7 +103,10 @@ same category) and sorts by severity.
 ```mermaid
 erDiagram
     workspaces ||--o{ memberships : has
+    organizations ||--o{ workspaces : contains
     workspaces ||--o{ knowledge_documents : has
+    workspaces ||--o{ guideline_rules : configures
+    guideline_rules ||--o{ guideline_rule_versions : versions
     knowledge_documents ||--o{ passages : contains
     workspaces ||--o{ terms : has
     workspaces ||--o{ facts : has
@@ -121,8 +124,14 @@ Key tables:
 
 - **`findings`** — `version_id`, `category`, `severity`, `span_start/end`,
   `affected_text`, `rule`, `explanation`, `source_passage_id` (nullable),
-  `evidence_status`, `confidence`, `suggestion`, `creator_decision`,
-  `edited_text`, `detector`.
+  cited policy rule id/version and immutable title/text snapshot,
+  `evidence_status`, `confidence`, `suggestion`, `creator_decision`, `edited_text`,
+  `detector`.
+- **`guideline_rules` / `guideline_rule_versions`** — workspace-scoped structured
+  policy with category, severity, applicability, mandatory/advisory status,
+  optional approved passage, effective date and immutable JSON snapshots for
+  every edit. Only enabled rules that apply to the content type enter the AI
+  prompt. A rule citation can support a policy mismatch, not a factual claim.
 - **`approvals`** — `version_id`, `decision`, `reason`, `reviewer`,
   `high_severity_signoff`, `created_at`. Tied to one version.
 - **`audit_events`** — every action with actor, entity and detail.
@@ -157,15 +166,23 @@ the current status so an approver who re-runs does not lose their turn.
 
 ## Auth
 
-`app/auth.py` resolves demo sessions server-side:
+`app/auth.py` resolves business and demo sessions server-side:
 
-- **Demo sessions** — `POST /api/demo/session` with a role returns an opaque
-  token stored in `demo_sessions`. The selected role is checked on protected
-  routes; `POST /api/logout` revokes the token.
-- Sessions expire after `DEMO_SESSION_TTL_HOURS` (12 hours by default). Expired
-  tokens are rejected, and stale rows are removed when a new demo session starts.
-- This is a demonstration flow, not production identity or account management:
-  visitors can select a demo role. Do not use it to protect confidential data.
+- **Business sessions** — Supabase access tokens are verified against the
+  configured issuer and JWKS (or an explicitly configured legacy HS256 secret).
+  Every request resolves the token subject to an active `memberships` row.
+  Workspace roles are read from BrandShield's database, not token metadata.
+- **Employee lifecycle** — workspace admins can invite employees, assign roles,
+  change roles and deactivate/reactivate accounts. Supabase sends invitation and
+  recovery messages; the service-role key is server-only.
+- **Demo sessions** — `POST /api/demo/session` creates an opaque, expiring token
+  only when `DEMO_AUTH_ENABLED=true`. Demo access defaults off. `POST /api/logout`
+  revokes demo sessions; Supabase sessions are cleared through its client.
+- `ALLOW_ORGANIZATION_CREATION=true` permits a verified account without a
+  workspace membership to create its first organization and become its admin.
+  The organization creator can create brands; members must be invited to each
+  brand workspace explicitly. Workspace selection is checked against active
+  membership on every request.
 
 `require_role(...)` is a FastAPI dependency applied per route.
 

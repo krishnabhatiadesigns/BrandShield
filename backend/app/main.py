@@ -14,9 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import get_db
-from .routers import brand, content, session, visual
+from .routers import brand, content, members, operations, organizations, session, visual
 from .schema import create_schema
 from .seed import seed_all
+from .operations import start_operations_worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("brandshield")
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI):
         "postgres" if settings.is_postgres else "sqlite",
         settings.groq_model if settings.llm_enabled else "disabled",
     )
+    start_operations_worker(db)
     yield
 
 
@@ -59,9 +61,12 @@ app.add_middleware(
 )
 
 app.include_router(session.router)
+app.include_router(members.router)
+app.include_router(organizations.router)
 app.include_router(content.router)
 app.include_router(brand.router)
 app.include_router(visual.router)
+app.include_router(operations.router)
 
 
 @app.get("/health", tags=["ops"])

@@ -135,10 +135,9 @@ The maths is real; the input path is simpler than planned.
 
 ## Round 3 verification
 
-On 18 November 2026, `backend/tests/test_round3_readiness.py` added regression
-coverage for citation and suggestion validation, context-preserving revisions
-(including overlap and stale-span handling), visual checks, retrieval isolation,
-and the complete creator → manager → approver journey. `backend/tests/test_sessions.py`
-covers session expiry, logout revocation and CORS allowlisting. The complete
-backend suite contains 20 tests. The frontend TypeScript check and production
-build also pass.
+The 18 November 2026 Round 3 checkpoint added regression coverage for citation
+and suggestion validation, context-preserving revisions (including overlap and
+stale-span handling), visual checks, retrieval isolation, and the complete
+creator → manager → approver journey. The suite has since grown to 46 tests,
+including Supabase token, membership, invitation and deactivation coverage.
+The frontend TypeScript check and production build also pass.

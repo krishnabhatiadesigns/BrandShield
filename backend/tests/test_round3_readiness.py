@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.auth import Principal, get_principal
 from app.checks.base import FindingDraft
@@ -98,6 +101,38 @@ def test_visual_checks_cover_palette_contrast_and_bad_input(application):
     assert result["contrast_ratio"] == pytest.approx(4.48, abs=0.01)
     assert any("4.5:1" in issue["rule"] for issue in result["issues"])
     assert any(issue["affected_text"] == "not-a-colour" for issue in result["issues"])
+
+
+def test_visual_image_upload_checks_palette_and_reports_manual_review_limits(application):
+    _, app, _ = application
+    image = Image.new("RGB", (20, 10), "#FF0000")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+
+    response = TestClient(app).post(
+        "/api/visual/image",
+        files={"file": ("creative.png", stream.getvalue(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["image"]["format"] == "PNG"
+    assert result["image"]["width"] == 20
+    assert result["image"]["colors"][0]["hex"] == "#FF0000"
+    assert result["palette_match"][0]["on_brand"] is False
+    assert any("Text/background contrast" in note for note in result["limitations"])
+    assert any(issue["category"] == "visual" for issue in result["issues"])
+
+
+def test_visual_image_upload_rejects_unreadable_files(application):
+    _, app, _ = application
+    response = TestClient(app).post(
+        "/api/visual/image",
+        files={"file": ("creative.png", b"not an image", "image/png")},
+    )
+
+    assert response.status_code == 422
+    assert "unreadable or damaged" in response.json()["detail"]
 
 
 def test_end_to_end_version_review_and_approval_preserve_workflow(application, monkeypatch):

@@ -1,15 +1,22 @@
 """Brand profile: guidelines, passages, terms, facts, palette, and PDF ingestion."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+import json
+import secrets
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 
 from ..auth import Principal, get_principal, require_role
-from ..db import Database, get_db
+from ..db import Database, _sql, get_db
 from ..models import (
     BrandProfile,
     CompanyContextUpdate,
     FactCreate,
     FactOut,
+    GuidelineRuleCreate,
+    GuidelineRuleOut,
+    GuidelineRuleUpdate,
     PaletteCreate,
     PaletteOut,
     PassageCreate,
@@ -19,9 +26,41 @@ from ..models import (
 )
 from ..pipeline import DISCLAIMERS
 from ..seed import now_iso
+from ..storage import StorageError, get_private_object, put_private_object
 from ..text import ExtractionError, extract_pdf
 
 router = APIRouter(prefix="/api/brand", tags=["brand"])
+
+
+def _rule_out(row: dict) -> GuidelineRuleOut:
+    return GuidelineRuleOut(
+        id=int(row["id"]),
+        category=row["category"],
+        title=row["title"],
+        description=row["description"],
+        good_example=row["good_example"],
+        bad_example=row["bad_example"],
+        severity=row["severity"],
+        mandatory=bool(row["mandatory"]),
+        content_types=row["content_types"].split(","),
+        source_passage_id=row["source_passage_id"],
+        enabled=bool(row["enabled"]),
+        version=int(row["current_version"]),
+        effective_date=row.get("effective_date") or row["created_at"][:10],
+    )
+
+
+def _rule_snapshot(data: dict, version: int, effective_date: str) -> str:
+    snapshot = {
+        key: data.get(key)
+        for key in (
+            "category", "title", "description", "good_example", "bad_example",
+            "severity", "mandatory", "content_types", "source_passage_id", "enabled",
+        )
+    }
+    snapshot["version"] = version
+    snapshot["effective_date"] = effective_date
+    return json.dumps(snapshot, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
 @router.get("", response_model=BrandProfile)
@@ -49,6 +88,9 @@ def get_profile(
     palette = db.query(
         "SELECT id, name, hex, role FROM palette_colors WHERE workspace_id = ? ORDER BY id", (ws,)
     )
+    rules = db.query(
+        "SELECT * FROM guideline_rules WHERE workspace_id = ? ORDER BY id", (ws,)
+    )
     context = db.query_one(
         "SELECT company_context FROM workspace_context WHERE workspace_id = ?", (ws,)
     )
@@ -60,8 +102,172 @@ def get_profile(
         terms=[TermOut(**t) for t in terms],
         facts=[FactOut(**f) for f in facts],
         palette=[PaletteOut(**c) for c in palette],
+        rules=[_rule_out(r) for r in rules],
         disclaimers=DISCLAIMERS,
     )
+
+
+@router.post("/rules", response_model=GuidelineRuleOut, status_code=status.HTTP_201_CREATED)
+def create_guideline_rule(
+    payload: GuidelineRuleCreate,
+    principal: Principal = Depends(require_role("manager", "admin")),
+    db: Database = Depends(get_db),
+) -> GuidelineRuleOut:
+    ws = principal.workspace_id
+    if payload.source_passage_id is not None and not db.query_one(
+        "SELECT p.id FROM passages p JOIN knowledge_documents d ON d.id = p.document_id"
+        " WHERE p.id = ? AND p.workspace_id = ? AND d.status = 'approved'",
+        (payload.source_passage_id, ws),
+    ):
+        raise HTTPException(status_code=422, detail="Choose a guideline passage from this brand.")
+    ts = now_iso()
+    effective_date = payload.effective_date or ts[:10]
+    data = payload.model_dump()
+    data["content_types"] = ",".join(payload.content_types)
+    with db.tx() as conn:
+        inserted = conn.execute(
+            _sql(
+                "INSERT INTO guideline_rules (workspace_id, category, title, description,"
+                " good_example, bad_example, severity, mandatory, content_types,"
+                " source_passage_id, enabled, current_version, effective_date, created_by,"
+                " updated_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " RETURNING id"
+            ),
+            (
+                ws, payload.category, payload.title, payload.description, payload.good_example,
+                payload.bad_example, payload.severity, int(payload.mandatory),
+                data["content_types"], payload.source_passage_id, int(payload.enabled), 1,
+                effective_date, principal.display_name, principal.display_name, ts, ts,
+            ),
+        ).fetchone()
+        rule_id = int(inserted["id"])
+        conn.execute(
+            _sql(
+                "INSERT INTO guideline_rule_versions (rule_id, workspace_id, version_no,"
+                " snapshot, effective_date, created_by, created_at) VALUES (?,?,?,?,?,?,?)"
+            ),
+            (
+                rule_id, ws, 1, _rule_snapshot(data, 1, effective_date),
+                effective_date, principal.display_name, ts,
+            ),
+        )
+        conn.execute(
+            _sql(
+                "INSERT INTO audit_events (workspace_id, actor, action, entity_type,"
+                " entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?)"
+            ),
+            (
+                ws, principal.display_name, "guideline_rule.created", "guideline_rule",
+                rule_id, f"Created policy rule: {payload.title}", ts,
+            ),
+        )
+    row = db.query_one("SELECT * FROM guideline_rules WHERE id = ? AND workspace_id = ?", (rule_id, ws))
+    assert row is not None
+    return _rule_out(row)
+
+
+@router.patch("/rules/{rule_id}", response_model=GuidelineRuleOut)
+def update_guideline_rule(
+    rule_id: int,
+    payload: GuidelineRuleUpdate,
+    principal: Principal = Depends(require_role("manager", "admin")),
+    db: Database = Depends(get_db),
+) -> GuidelineRuleOut:
+    ws = principal.workspace_id
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="Provide at least one field to update.")
+    if "source_passage_id" in changes and changes["source_passage_id"] is not None:
+        if not db.query_one(
+            "SELECT p.id FROM passages p JOIN knowledge_documents d ON d.id = p.document_id"
+            " WHERE p.id = ? AND p.workspace_id = ? AND d.status = 'approved'",
+            (changes["source_passage_id"], ws),
+        ):
+            raise HTTPException(status_code=422, detail="Choose a guideline passage from this brand.")
+    ts = now_iso()
+    with db.tx() as conn:
+        result = conn.execute(
+            _sql("SELECT * FROM guideline_rules WHERE id = ? AND workspace_id = ?"),
+            (rule_id, ws),
+        ).fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="That brand rule was not found.")
+        current = dict(result)
+        next_data = {**current, **changes}
+        if "content_types" in changes:
+            next_data["content_types"] = ",".join(changes["content_types"])
+        version = int(current["current_version"]) + 1
+        effective_date = changes.get("effective_date") or ts[:10]
+        fields = (
+            "category", "title", "description", "good_example", "bad_example", "severity",
+            "mandatory", "content_types", "source_passage_id", "enabled", "effective_date",
+        )
+        conn.execute(
+            _sql(
+                "UPDATE guideline_rules SET category=?, title=?, description=?, good_example=?,"
+                " bad_example=?, severity=?, mandatory=?, content_types=?, source_passage_id=?,"
+                " enabled=?, effective_date=?, current_version=?, updated_by=?, updated_at=?"
+                " WHERE id=? AND workspace_id=?"
+            ),
+            (
+                *(int(next_data[key]) if key in {"mandatory", "enabled"} else
+                  (effective_date if key == "effective_date" else next_data[key])
+                  for key in fields),
+                version, principal.display_name, ts, rule_id, ws,
+            ),
+        )
+        conn.execute(
+            _sql(
+                "INSERT INTO guideline_rule_versions (rule_id, workspace_id, version_no,"
+                " snapshot, effective_date, created_by, created_at) VALUES (?,?,?,?,?,?,?)"
+            ),
+            (
+                rule_id, ws, version, _rule_snapshot(next_data, version, effective_date),
+                effective_date, principal.display_name, ts,
+            ),
+        )
+        conn.execute(
+            _sql(
+                "INSERT INTO audit_events (workspace_id, actor, action, entity_type,"
+                " entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?)"
+            ),
+            (
+                ws, principal.display_name, "guideline_rule.updated", "guideline_rule",
+                rule_id, f"Updated policy rule to version {version}: {next_data['title']}", ts,
+            ),
+        )
+    row = db.query_one("SELECT * FROM guideline_rules WHERE id = ? AND workspace_id = ?", (rule_id, ws))
+    assert row is not None
+    return _rule_out(row)
+
+
+@router.get("/rules/{rule_id}/versions")
+def list_guideline_rule_versions(
+    rule_id: int,
+    principal: Principal = Depends(get_principal),
+    db: Database = Depends(get_db),
+) -> list[dict]:
+    if not db.query_one(
+        "SELECT id FROM guideline_rules WHERE id = ? AND workspace_id = ?",
+        (rule_id, principal.workspace_id),
+    ):
+        raise HTTPException(status_code=404, detail="That brand rule was not found.")
+    rows = db.query(
+        "SELECT version_no, snapshot, effective_date, created_by, created_at"
+        " FROM guideline_rule_versions WHERE rule_id = ? AND workspace_id = ?"
+        " ORDER BY version_no DESC",
+        (rule_id, principal.workspace_id),
+    )
+    return [
+        {
+            "version": int(row["version_no"]),
+            "snapshot": json.loads(row["snapshot"]),
+            "effective_date": row["effective_date"],
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
 
 
 @router.put("/company-context", status_code=status.HTTP_204_NO_CONTENT)
@@ -215,10 +421,23 @@ async def upload_guideline(
 
     ts = now_iso()
     doc_title = (title or (file.filename or "Uploaded guideline")).strip()[:200]
+    source_filename = (file.filename or "guideline.pdf").replace("\r", "").replace("\n", "")[:240]
+    object_key = f"guidelines/{principal.workspace_id}/{secrets.token_urlsafe(24)}"
+    try:
+        put_private_object(object_key, data, "application/pdf")
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     db.insert(
         "INSERT INTO knowledge_documents (workspace_id, title, doc_type, status, version,"
-        " effective_date, created_at) VALUES (?,?,'guideline','approved',1,?,?)",
-        (principal.workspace_id, doc_title, ts[:10], ts),
+        " effective_date, source_object_key, source_filename, source_content_type, source_size,"
+        " created_at) VALUES (?,?,'guideline','approved',1,?,?,?,?,?,?)",
+        (
+            principal.workspace_id, doc_title, ts[:10], object_key, source_filename,
+            "application/pdf", len(data), ts,
+        ),
     )
     doc_row = db.query_one(
         "SELECT id FROM knowledge_documents WHERE workspace_id = ? ORDER BY id DESC LIMIT 1",
@@ -252,3 +471,31 @@ async def upload_guideline(
          doc_id, f"{len(created)} passages from {doc_title}", ts),
     )
     return created
+
+
+@router.get("/guidelines/{document_id}/source")
+def download_guideline_source(
+    document_id: int,
+    principal: Principal = Depends(get_principal),
+    db: Database = Depends(get_db),
+) -> Response:
+    document = db.query_one(
+        "SELECT source_object_key, source_filename, source_content_type"
+        " FROM knowledge_documents WHERE id = ? AND workspace_id = ?",
+        (document_id, principal.workspace_id),
+    )
+    if not document or not document.get("source_object_key"):
+        raise HTTPException(status_code=404, detail="That guideline has no stored source file.")
+    try:
+        content = get_private_object(document["source_object_key"])
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    filename = quote(document.get("source_filename") or "guideline.pdf", safe="")
+    return Response(
+        content=content,
+        media_type=document.get("source_content_type") or "application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            "Cache-Control": "private, no-store",
+        },
+    )

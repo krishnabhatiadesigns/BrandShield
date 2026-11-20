@@ -29,6 +29,9 @@ VALID_CATEGORIES = {
     "disclaimer",
     "visual",
     "product_name",
+    "logo",
+    "typography",
+    "other",
 }
 VALID_SEVERITIES = {"low", "medium", "high"}
 VALID_EVIDENCE = {"supported", "contradicted", "unsupported", "needs_verification"}
@@ -69,6 +72,7 @@ def validate_llm_findings(
     allowed_passages: dict[int, dict[str, Any]],
     approved_terms: list[str],
     approved_numbers: set[str],
+    allowed_rules: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[list[FindingDraft], list[str]]:
     """Return (accepted findings, rejection notes)."""
     accepted: list[FindingDraft] = []
@@ -118,8 +122,43 @@ def validate_llm_findings(
                 if evidence in {"supported", "contradicted"}:
                     evidence = "needs_verification"
 
+        source_rule_id: int | None = None
+        source_rule: dict[str, Any] | None = None
+        raw_rule_id = raw.get("source_rule_id")
+        if raw_rule_id is not None:
+            try:
+                candidate_rule_id = int(raw_rule_id)
+            except (TypeError, ValueError):
+                candidate_rule_id = -1
+            source_rule = (allowed_rules or {}).get(candidate_rule_id)
+            if source_rule:
+                source_rule_id = candidate_rule_id
+                linked_passage_id = source_rule.get("source_passage_id")
+                if (
+                    source_passage_id is None
+                    and linked_passage_id is not None
+                    and int(linked_passage_id) in allowed_passages
+                ):
+                    source_passage_id = int(linked_passage_id)
+            else:
+                notes.append(
+                    f"Downgraded a finding: cited brand rule {raw_rule_id} is not active "
+                    "for this workspace and content type."
+                )
+
+        if source_rule:
+            severity = str(source_rule["severity"])
+            if not source_rule["mandatory"] and evidence == "supported":
+                evidence = "needs_verification"
+                notes.append(
+                    "Marked an advisory-rule finding for human verification; advisory "
+                    "guidance cannot establish a confirmed violation."
+                )
+
         # --- evidence consistency ------------------------------------------
-        if evidence in {"supported", "contradicted"} and source_passage_id is None:
+        rule_supports_policy = evidence == "supported" and source_rule_id is not None
+        if evidence in {"supported", "contradicted"} and source_passage_id is None \
+                and not rule_supports_policy:
             notes.append(
                 "Downgraded a finding to needs_verification: it claimed support but "
                 "cited no valid approved passage."
@@ -158,6 +197,10 @@ def validate_llm_findings(
                 evidence_status=evidence,  # type: ignore[arg-type]
                 suggestion=suggestion,
                 source_passage_id=source_passage_id,
+                source_rule_id=source_rule_id,
+                source_rule_version=int(source_rule["current_version"]) if source_rule else None,
+                source_rule_title=str(source_rule["title"]) if source_rule else None,
+                source_rule_text=str(source_rule["description"]) if source_rule else None,
                 confidence=_clamp_confidence(raw.get("confidence", 0.6)),
                 span_start=span_start,
                 span_end=span_end,

@@ -13,6 +13,7 @@ from app.schema import create_schema
 @pytest.fixture
 def session_client(monkeypatch):
     monkeypatch.setenv("DEMO_SESSION_TTL_HOURS", "12")
+    monkeypatch.setenv("DEMO_AUTH_ENABLED", "true")
     get_settings.cache_clear()
 
     db = Database("sqlite:///:memory:")
@@ -85,3 +86,10 @@ def test_cors_default_keeps_local_and_deployed_frontend_origins(monkeypatch):
         "http://localhost:5173",
         "https://brand-shield-amber.vercel.app",
     ]
+
+
+def test_supabase_url_requires_https_outside_local_development(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "http://auth.example.com")
+
+    with pytest.raises(ValueError, match="SUPABASE_URL must be an HTTPS"):
+        Settings()

@@ -2,16 +2,24 @@ import type {
   AuditEvent,
   BrandProfile,
   ContentDetail,
+  GuidelineRule,
+  GuidelineRulePayload,
   ContentSummary,
   HistoryVersion,
   Me,
   SampleInfo,
   Session,
   VisualCheckResponse,
+  WorkspaceMember,
+  Workspace,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 const TOKEN_KEY = 'brandshield.token'
+const TOKEN_TYPE_KEY = 'brandshield.token-type'
+const WORKSPACE_KEY = 'brandshield.workspace-id'
+
+export type TokenType = 'demo' | 'supabase'
 
 export class ApiError extends Error {
   status: number
@@ -25,15 +33,39 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
-export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  else localStorage.removeItem(TOKEN_KEY)
+export function getTokenType(): TokenType {
+  return localStorage.getItem(TOKEN_TYPE_KEY) === 'supabase' ? 'supabase' : 'demo'
+}
+
+export function getWorkspaceId(): number | null {
+  const value = Number(localStorage.getItem(WORKSPACE_KEY))
+  return Number.isInteger(value) && value > 0 ? value : null
+}
+
+export function setWorkspaceId(id: number | null) {
+  if (id) localStorage.setItem(WORKSPACE_KEY, String(id))
+  else localStorage.removeItem(WORKSPACE_KEY)
+}
+
+export function setToken(token: string | null, type: TokenType = 'demo') {
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token)
+    localStorage.setItem(TOKEN_TYPE_KEY, type)
+  } else {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(TOKEN_TYPE_KEY)
+  }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(init.headers)
-  if (token) headers.set('X-Demo-Token', token)
+  if (token) {
+    if (getTokenType() === 'supabase') headers.set('Authorization', `Bearer ${token}`)
+    else headers.set('X-Demo-Token', token)
+  }
+  const workspaceId = getWorkspaceId()
+  if (workspaceId) headers.set('X-Workspace-ID', String(workspaceId))
   if (init.body && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
@@ -75,6 +107,41 @@ export const api = {
   logout: () => request<void>('/api/logout', { method: 'POST' }),
 
   me: () => request<Me>('/api/me'),
+  workspaces: () => request<Workspace[]>('/api/workspaces'),
+  createOrganization: (payload: {
+    name: string
+    brand_name?: string
+    display_name: string
+  }) =>
+    request<{
+      organization_id: number
+      organization_name: string
+      workspace_id: number
+      workspace_name: string
+      role: string
+    }>('/api/organizations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  createBrand: (name: string) =>
+    request<Workspace>('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  members: () => request<WorkspaceMember[]>('/api/admin/members'),
+
+  inviteMember: (payload: { email: string; display_name: string; role: string }) =>
+    request<WorkspaceMember>('/api/admin/members', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateMember: (userId: string, payload: { role?: string; is_active?: boolean }) =>
+    request<WorkspaceMember>(`/api/admin/members/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
 
   samples: () => request<SampleInfo[]>('/api/samples'),
 
@@ -151,6 +218,24 @@ export const api = {
   audit: () => request<AuditEvent[]>('/api/audit'),
 
   brand: () => request<BrandProfile>('/api/brand'),
+  createGuidelineRule: (payload: GuidelineRulePayload) =>
+    request<GuidelineRule>('/api/brand/rules', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateGuidelineRule: (id: number, payload: Partial<GuidelineRulePayload>) =>
+    request<GuidelineRule>(`/api/brand/rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  guidelineRuleVersions: (id: number) =>
+    request<{
+      version: number
+      snapshot: Record<string, unknown>
+      effective_date: string
+      created_by: string
+      created_at: string
+    }[]>(`/api/brand/rules/${id}/versions`),
   updateCompanyContext: (companyContext: string) =>
     request<void>('/api/brand/company-context', {
       method: 'PUT',
@@ -180,6 +265,61 @@ export const api = {
   }) =>
     request<VisualCheckResponse>('/api/visual/check', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  visualImageCheck: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<VisualCheckResponse>('/api/visual/image', {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  operationsAnalytics: () =>
+    request<{ submissions: number; approved_versions: number; findings: number; usage: { event_type: string; quantity: number }[] }>(
+      '/api/operations/analytics',
+    ),
+  auditCsvUrl: () => `${BASE}/api/operations/exports/audit.csv`,
+  downloadAuditCsv: async () => {
+    const token = getToken()
+    const headers = new Headers()
+    if (token) {
+      if (getTokenType() === 'supabase') headers.set('Authorization', `Bearer ${token}`)
+      else headers.set('X-Demo-Token', token)
+    }
+    const workspaceId = getWorkspaceId()
+    if (workspaceId) headers.set('X-Workspace-ID', String(workspaceId))
+    const response = await fetch(`${BASE}/api/operations/exports/audit.csv`, { headers })
+    if (!response.ok) throw new ApiError('Could not export the audit log.', response.status)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'brandshield-audit.csv'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  },
+  apiKeys: () => request<{ id: number; name: string; key_prefix: string; scopes: string; is_active: boolean; created_at: string }[]>(
+    '/api/operations/api-keys',
+  ),
+  createApiKey: (name: string, scopes: string[]) =>
+    request<{ key: string; name: string; prefix: string; scopes: string[]; warning: string }>(
+      '/api/operations/api-keys',
+      { method: 'POST', body: JSON.stringify({ name, scopes }) },
+    ),
+  webhooks: () => request<{ id: number; name: string; url: string; events: string; is_active: boolean; created_at: string }[]>(
+    '/api/operations/webhooks',
+  ),
+  createWebhook: (payload: { name: string; url: string; secret: string; events: string[] }) =>
+    request<{ id: number; name: string; url: string; events: string; is_active: boolean }>(
+      '/api/operations/webhooks',
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  assignment: (itemId: number, payload: { assignee_user_id?: string | null; assignee_name?: string | null; due_at?: string | null }) =>
+    request<Record<string, unknown>>(`/api/operations/content/${itemId}/assignment`, {
+      method: 'PUT',
       body: JSON.stringify(payload),
     }),
 }

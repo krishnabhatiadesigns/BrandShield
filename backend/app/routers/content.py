@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import mimetypes
+import secrets
 from typing import Any
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 
 from ..auth import Principal, get_principal, require_role
 from ..db import Database, get_db
@@ -27,7 +30,9 @@ from ..models import (
 from ..pipeline import run_review
 from ..samples import SAMPLES
 from ..seed import now_iso
+from ..storage import StorageError, get_private_object, put_private_object
 from ..text import ExtractionError, extract_upload
+from ..operations import queue_notification, queue_webhook, record_usage
 
 router = APIRouter(prefix="/api", tags=["content"])
 
@@ -164,6 +169,7 @@ def _detail(db: Database, ws_id: int, item: dict[str, Any]) -> ContentDetail:
         created_by=item["created_by"],
         created_at=item["created_at"],
         updated_at=item["updated_at"],
+        source_filename=item.get("source_filename"),
         current_version=version,
         findings=findings,
         review_run=run,
@@ -244,13 +250,15 @@ def _apply_review(
             conn.execute(
                 "INSERT INTO findings (version_id, workspace_id, category, severity, span_start,"
                 " span_end, affected_text, rule, explanation, source_passage_id, evidence_status,"
+                " source_rule_id, source_rule_version, source_rule_title, source_rule_text,"
                 " confidence, suggestion, creator_decision, edited_text, detector, created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     version_id, ws_id, f.category, f.severity, f.span_start, f.span_end,
                     f.affected_text, f.rule, f.explanation, f.source_passage_id,
-                    f.evidence_status, f.confidence, f.suggestion, decision, edited_text,
-                    f.detector, ts,
+                    f.evidence_status, f.source_rule_id, f.source_rule_version,
+                    f.source_rule_title, f.source_rule_text, f.confidence, f.suggestion,
+                    decision, edited_text, f.detector, ts,
                 ),
             )
         conn.execute(
@@ -287,6 +295,18 @@ def _apply_review(
     _audit(
         db, ws_id, actor, "review.completed", "version", version_id,
         f"{len(outcome.findings)} findings ({outcome.llm_status})",
+    )
+    record_usage(db, ws_id, "review_run", actor)
+    queue_webhook(
+        db,
+        ws_id,
+        "review.completed",
+        {
+            "item_id": item_id,
+            "version_id": version_id,
+            "finding_count": len(outcome.findings),
+            "llm_status": outcome.llm_status,
+        },
     )
     return {
         "llm_status": outcome.llm_status,
@@ -342,6 +362,15 @@ def create_content(
     principal: Principal = Depends(require_role("creator", "admin")),
     db: Database = Depends(get_db),
 ) -> ContentDetail:
+    return _create_content(payload, principal, db)
+
+
+def _create_content(
+    payload: ContentCreate,
+    principal: Principal,
+    db: Database,
+    source_file: tuple[str, str, str, int] | None = None,
+) -> ContentDetail:
     """Only creators author content.
 
     Separation of duties: the person who writes a draft must not be the person
@@ -352,9 +381,11 @@ def create_content(
     with db.tx() as conn:
         cur = conn.execute(
             "INSERT INTO content_items (workspace_id, title, content_type, status, created_by,"
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            " source_object_key, source_filename, source_content_type, source_size,"
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (principal.workspace_id, payload.title.strip(), payload.content_type,
-             STATUS_DRAFT, principal.user_id, ts, ts),
+             STATUS_DRAFT, principal.user_id,
+             *(source_file or (None, None, None, None)), ts, ts),
         )
         item_id = int(cur.lastrowid) if not db.is_postgres else int(
             conn.execute("SELECT lastval()").fetchone()[0]
@@ -372,6 +403,13 @@ def create_content(
         )
     _audit(db, principal.workspace_id, principal.display_name, "content.created", "content_item",
            item_id, payload.title)
+    record_usage(db, principal.workspace_id, "submission_created", principal.display_name)
+    queue_webhook(
+        db,
+        principal.workspace_id,
+        "submission.created",
+        {"submission_id": item_id, "title": payload.title, "content_type": payload.content_type},
+    )
     item = _get_item(db, principal.workspace_id, item_id)
     return _detail(db, principal.workspace_id, item)
 
@@ -398,7 +436,47 @@ async def create_from_upload(
         content_type=content_type,  # type: ignore[arg-type]
         body=body[:20000],
     )
-    return create_content(payload, principal, db)
+    filename = (file.filename or "uploaded-document").replace("\r", "").replace("\n", "")
+    object_key = f"submissions/{principal.workspace_id}/{secrets.token_urlsafe(24)}"
+    detected_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    try:
+        put_private_object(object_key, data, detected_type)
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return _create_content(
+        payload,
+        principal,
+        db,
+        (object_key, filename[:240], detected_type, len(data)),
+    )
+
+
+@router.get("/content/{item_id}/source")
+def download_submission_source(
+    item_id: int,
+    principal: Principal = Depends(get_principal),
+    db: Database = Depends(get_db),
+) -> Response:
+    item = _get_item(db, principal.workspace_id, item_id)
+    object_key = item.get("source_object_key")
+    if not object_key:
+        raise HTTPException(status_code=404, detail="This submission has no stored source file.")
+    try:
+        content = get_private_object(object_key)
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    filename = quote(item.get("source_filename") or "source-file", safe="")
+    return Response(
+        content=content,
+        media_type=item.get("source_content_type") or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.get("/content/{item_id}", response_model=ContentDetail)
@@ -660,6 +738,27 @@ def submit_for_approval(
     )
     _audit(db, principal.workspace_id, principal.display_name, action, "version",
            int(ver["id"]), detail)
+    assignment = db.query_one(
+        "SELECT assignee_user_id, assignee_name FROM review_assignments"
+        " WHERE content_item_id=? AND workspace_id=?",
+        (item_id, principal.workspace_id),
+    )
+    recipient = None
+    if assignment and assignment.get("assignee_user_id"):
+        member = db.query_one(
+            "SELECT email FROM memberships WHERE workspace_id=? AND user_id=? AND is_active=1",
+            (principal.workspace_id, assignment["assignee_user_id"]),
+        )
+        recipient = member["email"] if member else None
+    if recipient:
+        queue_notification(
+            db,
+            principal.workspace_id,
+            recipient,
+            f"BrandShield: submission waiting for review — {item['title']}",
+            f"{item['title']} is now in '{new_status}'. Assigned reviewer: "
+            f"{assignment.get('assignee_name') or recipient}.",
+        )
     return _detail(db, principal.workspace_id, _get_item(db, principal.workspace_id, item_id))
 
 
@@ -807,6 +906,18 @@ def decide_approval(
         )
     _audit(db, principal.workspace_id, principal.display_name, f"approval.{payload.decision}",
            "version", int(ver["id"]), payload.reason)
+    record_usage(db, principal.workspace_id, f"approval_{payload.decision}", principal.display_name)
+    queue_webhook(
+        db,
+        principal.workspace_id,
+        f"approval.{payload.decision}",
+        {
+            "item_id": item_id,
+            "version_id": int(ver["id"]),
+            "decision": payload.decision,
+            "reviewer": principal.display_name,
+        },
+    )
     return _detail(db, principal.workspace_id, _get_item(db, principal.workspace_id, item_id))
 
 

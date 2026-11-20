@@ -177,8 +177,16 @@ def seed_workspace(db: Database) -> int:
 
     ts = now_iso()
     db.insert(
-        "INSERT INTO workspaces (name, slug, created_at) VALUES (?, ?, ?)",
-        ("Northwind Foods", DEMO_SLUG, ts),
+        "INSERT INTO organizations (name, slug, created_at) VALUES (?, ?, ?)",
+        ("Northwind Foods", "northwind-foods-org", ts),
+    )
+    organization = db.query_one(
+        "SELECT id FROM organizations WHERE slug = ?", ("northwind-foods-org",)
+    )
+    assert organization is not None
+    db.insert(
+        "INSERT INTO workspaces (organization_id, name, slug, created_at) VALUES (?, ?, ?, ?)",
+        (int(organization["id"]), "Northwind Foods", DEMO_SLUG, ts),
     )
     ws = db.query_one("SELECT id FROM workspaces WHERE slug = ?", (DEMO_SLUG,))
     assert ws is not None

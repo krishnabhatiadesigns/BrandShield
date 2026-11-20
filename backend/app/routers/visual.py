@@ -6,14 +6,19 @@ formula), not heuristics. OCR is deliberately not enabled; see the README.
 from __future__ import annotations
 
 import math
+from io import BytesIO
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from ..auth import Principal, get_principal
 from ..db import Database, get_db
-from ..models import VisualCheckRequest, VisualCheckResponse, VisualIssue
+from ..models import ImageVisualCheckResponse, VisualCheckRequest, VisualCheckResponse, VisualIssue
 
 router = APIRouter(prefix="/api/visual", tags=["visual"])
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_PIXELS = 20_000_000
+SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 def hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -155,3 +160,77 @@ def check_visual(
 
     return VisualCheckResponse(issues=issues, contrast_ratio=round(ratio, 2) if ratio else None,
                                palette_match=matches)
+
+
+@router.post("/image", response_model=ImageVisualCheckResponse)
+async def check_visual_image(
+    file: UploadFile = File(...),
+    principal: Principal = Depends(get_principal),
+    db: Database = Depends(get_db),
+) -> ImageVisualCheckResponse:
+    data = await file.read(MAX_IMAGE_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="Choose a non-empty image file.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="That image is larger than 10 MB.")
+    try:
+        with Image.open(BytesIO(data)) as original:
+            image_format = (original.format or "").upper()
+            content_type = Image.MIME.get(image_format, "")
+            if content_type not in SUPPORTED_IMAGE_TYPES:
+                raise HTTPException(
+                    status_code=415,
+                    detail="Supported image formats are PNG, JPEG, and WebP.",
+                )
+            width, height = original.size
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise HTTPException(
+                    status_code=413,
+                    detail="That image exceeds the 20-megapixel inspection limit.",
+                )
+            image = ImageOps.exif_transpose(original).convert("RGB")
+            image.thumbnail((512, 512))
+            colors = image.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+            palette = colors.getpalette()
+            counts = colors.getcolors(maxcolors=512 * 512) or []
+            total = sum(count for count, _ in counts) or 1
+            extracted = []
+            for count, index in sorted(counts, reverse=True)[:8]:
+                offset = index * 3
+                rgb = palette[offset : offset + 3]
+                if len(rgb) == 3:
+                    extracted.append(
+                        {
+                            "hex": "#{:02X}{:02X}{:02X}".format(*rgb),
+                            "percentage": round(count / total * 100, 1),
+                        }
+                    )
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="That image is unreadable or damaged. Try a PNG, JPEG, or WebP export.",
+        ) from exc
+
+    color_result = check_visual(
+        VisualCheckRequest(hex_colors=[item["hex"] for item in extracted]),
+        principal,
+        db,
+    )
+    return ImageVisualCheckResponse(
+        issues=color_result.issues,
+        contrast_ratio=None,
+        palette_match=color_result.palette_match,
+        image={
+            "filename": (file.filename or "creative").replace("\r", "").replace("\n", "")[:240],
+            "format": image_format,
+            "width": width,
+            "height": height,
+            "colors": extracted,
+        },
+        limitations=[
+            "Color palette is estimated from image pixels; transparent pixels and gradients may affect results.",
+            "Text/background contrast, typography, and logo placement are not automatically verified; inspect these manually.",
+        ],
+    )

@@ -33,6 +33,8 @@ replacement. People decide what to change; the product never auto-publishes.
 - Run deterministic brand checks without an AI service.
 - Optionally run Groq analysis with retrieval over approved, in-force passages.
 - Scope retrieval and stored records to the signed-in workspace.
+- Create organizations and multiple brand workspaces; switch only among brands with active membership.
+- Configure versioned, content-applicable brand policy rules and retain the exact cited rule version on AI findings.
 - Validate AI findings against the draft and approved sources; downgrade invalid
   evidence and remove unsafe suggestions.
 - Show finding severity, evidence, exact affected text and suggested changes.
@@ -54,11 +56,11 @@ replacement. People decide what to change; the product never auto-publishes.
 
 - OCR is not implemented; scanned PDFs without selectable text are rejected.
 - Visual checking accepts hex colours; it does not inspect uploaded images.
-- The role-selectable demo is not real user authentication or account
-  management. Guideline uploads are parsed in memory and are not persisted to
-  object storage.
-- The UI is configured for one demo workspace; multi-workspace administration,
-  analytics, email notifications and publishing integrations are not built.
+- Supabase email/password authentication, invitation, recovery and workspace
+  member role/access controls and organization/brand workspaces are implemented
+  but require provider configuration and live verification. Guideline uploads
+  are parsed in memory and are not persisted to object storage.
+- Analytics, email notifications and publishing integrations are not built.
 - The planned labelled accuracy set was not completed. No precision/recall or
   accuracy score is claimed.
 
@@ -131,7 +133,7 @@ claimed.
 
 Verified locally on 18 November 2026:
 
-- From `backend\`, `.venv\Scripts\python.exe -m pytest tests -v` — **20 tests passed**.
+- From `backend\`, `.venv\Scripts\python.exe -m pytest tests -v` — **46 tests passed**.
   Coverage includes evidence validation, visual checks, workflow transitions,
   re-run decision preservation, exact-version approval, reviewer role
   restrictions, stale/overlapping edits, duplicate actions, whitespace-only
@@ -147,8 +149,8 @@ Verified locally on 18 November 2026:
 
 ## Product roadmap
 
-1. **Production account lifecycle:** replace role selection with secure
-   authentication, invitation/sign-up and membership management.
+1. **Structured policy management:** add direct deterministic evaluation for
+   configurable rules and expand policy-change approval/governance controls.
 2. **Reliable document storage:** persist uploads in private object storage with
    retention controls, file limits and clear download permissions.
 3. **Visual asset workflow:** add explicit image-region selection and human
@@ -158,8 +160,8 @@ Verified locally on 18 November 2026:
    report precision and recall by rule category. Only then compare BM25 with
    hybrid/vector retrieval and evaluate calibrated confidence and
    citation-backed contradiction detection.
-5. **Team operations:** add multi-workspace administration, an analytics
-   dashboard, audit exports and notifications based on user feedback.
+5. **Team operations:** add analytics, audit exports and notifications based on
+   user feedback.
 6. **Integrations:** consider publishing-platform connections only after the
    human approval and version controls are proven in production.
 

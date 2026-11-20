@@ -2,9 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useAuth } from '../components/AuthContext'
 import { ErrorBanner, LoadingBlock, Spinner } from '../components/ui'
-import type { BrandProfile, VisualCheckResponse } from '../types'
+import type {
+  BrandProfile,
+  GuidelineRule,
+  GuidelineRulePayload,
+  VisualCheckResponse,
+} from '../types'
 
-type Tab = 'context' | 'guidelines' | 'terms' | 'facts' | 'palette' | 'visual'
+type Tab = 'context' | 'guidelines' | 'rules' | 'terms' | 'facts' | 'palette' | 'visual'
 
 export default function BrandProfilePage() {
   const { me } = useAuth()
@@ -52,6 +57,7 @@ export default function BrandProfilePage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'context', label: 'Company context' },
     { key: 'guidelines', label: `Guidelines (${profile.passages.length})` },
+    { key: 'rules', label: `Policy rules (${profile.rules.length})` },
     { key: 'terms', label: `Terminology (${profile.terms.length})` },
     { key: 'facts', label: `Facts (${profile.facts.length})` },
     { key: 'palette', label: 'Palette' },
@@ -94,6 +100,7 @@ export default function BrandProfilePage() {
       {tab === 'guidelines' && (
         <GuidelinesTab profile={profile} canEdit={canEdit} busy={busy} run={run} />
       )}
+      {tab === 'rules' && <RulesTab profile={profile} canEdit={canEdit} busy={busy} run={run} />}
       {tab === 'terms' && <TermsTab profile={profile} canEdit={canEdit} busy={busy} run={run} />}
       {tab === 'facts' && <FactsTab profile={profile} canEdit={canEdit} busy={busy} run={run} />}
       {tab === 'palette' && (
@@ -105,6 +112,240 @@ export default function BrandProfilePage() {
 }
 
 type RunFn = (fn: () => Promise<unknown>, message: string) => Promise<void>
+
+const EMPTY_RULE: GuidelineRulePayload = {
+  category: 'messaging',
+  title: '',
+  description: '',
+  good_example: null,
+  bad_example: null,
+  severity: 'medium',
+  mandatory: true,
+  content_types: ['social', 'ad', 'email', 'document'],
+  source_passage_id: null,
+  enabled: true,
+}
+
+function RulesTab({
+  profile,
+  canEdit,
+  busy,
+  run,
+}: {
+  profile: BrandProfile
+  canEdit: boolean
+  busy: boolean
+  run: RunFn
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [form, setForm] = useState<GuidelineRulePayload>(EMPTY_RULE)
+  const [history, setHistory] = useState<
+    { version: number; snapshot: Record<string, unknown>; effective_date: string; created_by: string }[]
+  >([])
+  const editing = profile.rules.find((rule) => rule.id === selectedId)
+  const set = <K extends keyof GuidelineRulePayload>(key: K, value: GuidelineRulePayload[K]) =>
+    setForm((current) => ({ ...current, [key]: value }))
+
+  const choose = (rule: GuidelineRule) => {
+    setSelectedId(rule.id)
+    setForm({
+      category: rule.category,
+      title: rule.title,
+      description: rule.description,
+      good_example: rule.good_example,
+      bad_example: rule.bad_example,
+      severity: rule.severity,
+      mandatory: rule.mandatory,
+      content_types: rule.content_types,
+      source_passage_id: rule.source_passage_id,
+      enabled: rule.enabled,
+      effective_date: rule.effective_date,
+    })
+    setHistory([])
+  }
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!form.title.trim() || !form.description.trim() || !form.content_types.length) return
+    await run(
+      () =>
+        editing
+          ? api.updateGuidelineRule(editing.id, form)
+          : api.createGuidelineRule(form),
+      editing ? 'Brand rule updated and versioned.' : 'Brand rule created.',
+    )
+    setSelectedId(null)
+    setForm(EMPTY_RULE)
+    setHistory([])
+  }
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
+      <section className="space-y-3">
+        <p className="text-sm text-gray-600">
+          Versioned policy rules are included in matching AI reviews. Rules without an attached
+          approved passage are policy guidance, not evidence for factual claims.
+        </p>
+        {profile.rules.length === 0 && (
+          <div className="card p-5 text-sm text-gray-600">
+            No structured rules yet. Add tone, messaging, claim, visual, or other brand requirements.
+          </div>
+        )}
+        {profile.rules.map((rule) => (
+          <article key={rule.id} className="card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold text-charcoal">{rule.title}</h3>
+                  <span className="badge bg-gray-100 text-gray-700">{rule.category}</span>
+                  <span className={`badge ${rule.enabled ? 'bg-brand-100 text-brand-800' : 'bg-gray-100 text-gray-500'}`}>
+                    {rule.enabled ? 'configured enabled' : 'configured disabled'}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-gray-700">{rule.description}</p>
+                <p className="mt-2 text-xs text-gray-500">
+                  {rule.severity} · {rule.mandatory ? 'mandatory' : 'advisory'} · v{rule.version} ·
+                  effective {rule.effective_date} · {rule.content_types.join(', ')}
+                </p>
+              </div>
+              {canEdit && (
+                <div className="flex gap-2">
+                  <button className="btn-secondary text-xs" onClick={() => choose(rule)}>Edit</button>
+                  <button
+                    className="btn-secondary text-xs"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        () => api.updateGuidelineRule(rule.id, { enabled: !rule.enabled }),
+                        rule.enabled ? 'Brand rule disabled.' : 'Brand rule enabled.',
+                      )
+                    }
+                  >
+                    {rule.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                </div>
+              )}
+            </div>
+            {rule.source_passage_id && (
+              <p className="mt-2 text-xs text-brand-700">
+                Linked to approved passage #{rule.source_passage_id}
+              </p>
+            )}
+          </article>
+        ))}
+      </section>
+
+      {canEdit && (
+        <form className="card h-fit space-y-3 p-5" onSubmit={(event) => void save(event)}>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-charcoal">{editing ? 'Edit policy rule' : 'Add policy rule'}</h2>
+            {editing && (
+              <button
+                type="button"
+                className="text-xs text-brand-700 underline"
+                onClick={() => {
+                  setSelectedId(null)
+                  setForm(EMPTY_RULE)
+                  setHistory([])
+                }}
+              >
+                New rule
+              </button>
+            )}
+          </div>
+          <label className="label">
+            Title
+            <input className="input mt-1" maxLength={160} value={form.title}
+              onChange={(event) => set('title', event.target.value)} required />
+          </label>
+          <label className="label">
+            Rule / explanation
+            <textarea className="input mt-1 min-h-20" maxLength={2000}
+              value={form.description} onChange={(event) => set('description', event.target.value)} required />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="label">
+              Category
+              <select className="input mt-1" value={form.category}
+                onChange={(event) => set('category', event.target.value as GuidelineRulePayload['category'])}>
+                {['tone', 'messaging', 'claim', 'terminology', 'fact', 'disclaimer', 'visual', 'logo', 'typography', 'other'].map((value) =>
+                  <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label className="label">
+              Severity
+              <select className="input mt-1" value={form.severity}
+                onChange={(event) => set('severity', event.target.value as GuidelineRulePayload['severity'])}>
+                {['low', 'medium', 'high'].map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="label">
+              Good example
+              <input className="input mt-1" maxLength={1000} value={form.good_example ?? ''}
+                onChange={(event) => set('good_example', event.target.value || null)} />
+            </label>
+            <label className="label">
+              Avoid
+              <input className="input mt-1" maxLength={1000} value={form.bad_example ?? ''}
+                onChange={(event) => set('bad_example', event.target.value || null)} />
+            </label>
+          </div>
+          <label className="label">
+            Applicable content
+            <select className="input mt-1" multiple value={form.content_types}
+              onChange={(event) => set('content_types', Array.from(event.target.selectedOptions, (option) => option.value as GuidelineRulePayload['content_types'][number]))}>
+              {['social', 'ad', 'email', 'document'].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <span className="mt-1 block text-xs text-gray-500">Use Ctrl/Cmd to select multiple types.</span>
+          </label>
+          <label className="label">
+            Supporting approved passage (optional)
+            <select className="input mt-1" value={form.source_passage_id ?? ''}
+              onChange={(event) => set('source_passage_id', event.target.value ? Number(event.target.value) : null)}>
+              <option value="">No linked passage</option>
+              {profile.passages.map((passage) => (
+                <option key={passage.id} value={passage.id}>{passage.source} · {passage.section || `Passage ${passage.id}`}</option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={form.mandatory} onChange={(event) => set('mandatory', event.target.checked)} />
+              Mandatory requirement
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={form.enabled} onChange={(event) => set('enabled', event.target.checked)} />
+              Enabled
+            </label>
+          </div>
+          <label className="label">
+            Effective date
+            <input className="input mt-1" type="date" value={form.effective_date ?? ''}
+              onChange={(event) => set('effective_date', event.target.value || undefined)} />
+          </label>
+          <button className="btn-primary w-full" disabled={busy || !form.title.trim() || !form.description.trim() || !form.content_types.length}>
+            {busy ? <Spinner /> : editing ? 'Save new version' : 'Create rule'}
+          </button>
+          {editing && (
+            <button type="button" className="btn-secondary w-full" disabled={busy}
+              onClick={() => void api.guidelineRuleVersions(editing.id).then(setHistory)}>
+              Show version history
+            </button>
+          )}
+          {history.length > 0 && (
+            <ol className="space-y-2 border-t pt-3 text-xs text-gray-600">
+              {history.map((item) => (
+                <li key={item.version}>v{item.version} · effective {item.effective_date} · {item.created_by}</li>
+              ))}
+            </ol>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
 
 function CompanyContextTab({
   profile,
@@ -556,10 +797,14 @@ function PaletteTab({
 }
 
 function VisualTab() {
+  const imageRef = useRef<HTMLInputElement>(null)
   const [colors, setColors] = useState('#1F5C3A, #FF0000')
   const [textHex, setTextHex] = useState('#E8A33D')
   const [bgHex, setBgHex] = useState('#F5EFE3')
   const [result, setResult] = useState<VisualCheckResponse | null>(null)
+  const [imageResult, setImageResult] = useState<VisualCheckResponse | null>(null)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -584,8 +829,77 @@ function VisualTab() {
     }
   }
 
+  const checkImage = async (file: File) => {
+    setImageBusy(true)
+    setImageError(null)
+    setImageResult(null)
+    try {
+      setImageResult(await api.visualImageCheck(file))
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : 'The image check failed.')
+    } finally {
+      setImageBusy(false)
+      if (imageRef.current) imageRef.current.value = ''
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <section className="card space-y-3 p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          Inspect a creative asset
+        </h2>
+        <p className="text-xs text-gray-500">
+          Upload PNG, JPEG, or WebP up to 10 MB. BrandShield estimates its dominant colours and
+          compares them with this workspace's palette. Text contrast, fonts, and logos still need
+          a human review.
+        </p>
+        <input
+          ref={imageRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="block text-sm"
+          aria-label="Choose a creative image"
+          disabled={imageBusy}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void checkImage(file)
+          }}
+        />
+        {imageBusy && <p className="text-sm text-gray-600">Inspecting image…</p>}
+        {imageError && <ErrorBanner message={imageError} />}
+        {imageResult?.image && (
+          <div className="space-y-3 rounded-lg border border-gray-200 p-3">
+            <p className="text-sm font-semibold text-charcoal">
+              {imageResult.image.filename} · {imageResult.image.width} × {imageResult.image.height} ·{' '}
+              {imageResult.image.format}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {imageResult.image.colors.map((color) => (
+                <div key={color.hex} className="flex items-center gap-2 rounded border p-2 text-xs">
+                  <span className="h-6 w-6 rounded" style={{ backgroundColor: color.hex }} />
+                  <span className="font-mono">{color.hex}</span>
+                  <span>{color.percentage}%</span>
+                </div>
+              ))}
+            </div>
+            {imageResult.issues.length === 0 ? (
+              <p className="text-sm text-brand-800">No palette mismatch detected.</p>
+            ) : (
+              imageResult.issues.map((issue, index) => (
+                <div key={`${issue.rule}-${index}`} className="rounded border border-amber-200 p-3">
+                  <p className="text-sm font-semibold">{issue.severity}: {issue.rule}</p>
+                  <p className="text-sm text-gray-700">{issue.explanation}</p>
+                </div>
+              ))
+            )}
+            <ul className="list-inside list-disc text-xs text-gray-500">
+              {imageResult.limitations?.map((limitation) => <li key={limitation}>{limitation}</li>)}
+            </ul>
+          </div>
+        )}
+      </section>
+
       <section className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
           Palette and contrast check

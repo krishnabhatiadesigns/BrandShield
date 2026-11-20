@@ -11,8 +11,10 @@ Order of operations (matches the spec):
 from __future__ import annotations
 
 import logging
+import json
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 from .checks.base import FindingDraft
 from .checks.deterministic import (
@@ -66,6 +68,37 @@ def build_brand_context(db: Database, workspace_id: int, content_type: str) -> B
         "SELECT id, kind, name, notes FROM brand_assets WHERE workspace_id = ?",
         (workspace_id,),
     )
+    policy_versions = db.query(
+        "SELECT rule_id, version_no, snapshot, effective_date"
+        " FROM guideline_rule_versions WHERE workspace_id = ? AND effective_date <= ?",
+        (workspace_id, date.today().isoformat()),
+    )
+    effective_versions: dict[int, dict] = {}
+    for version in policy_versions:
+        rule_id = int(version["rule_id"])
+        current = effective_versions.get(rule_id)
+        if current and (
+            current["effective_date"], int(current["version_no"])
+        ) >= (version["effective_date"], int(version["version_no"])):
+            continue
+        effective_versions[rule_id] = version
+
+    rules = []
+    for rule_id, version in effective_versions.items():
+        snapshot = json.loads(version["snapshot"])
+        types = str(snapshot["content_types"]).split(",")
+        if not snapshot["enabled"] or content_type not in types:
+            continue
+        rules.append(
+            {
+                **snapshot,
+                "id": rule_id,
+                "current_version": int(version["version_no"]),
+                "content_types": types,
+                "mandatory": bool(snapshot["mandatory"]),
+                "effective_date": version["effective_date"],
+            }
+        )
     passages = load_workspace_passages(db, workspace_id)
     return BrandContext(
         workspace_id=workspace_id,
@@ -75,6 +108,7 @@ def build_brand_context(db: Database, workspace_id: int, content_type: str) -> B
         passages=passages,
         palette=palette,
         assets=assets,
+        rules=rules,
         required_disclaimer=DISCLAIMERS.get(content_type),
         content_type=content_type,
     )
@@ -115,6 +149,10 @@ def run_review(
         for f in deterministic:
             if f.source_passage_id and f.source_passage_id not in passage_ids:
                 passage_ids.append(f.source_passage_id)
+        for rule in ctx.rules:
+            passage_id = rule.get("source_passage_id")
+            if passage_id and int(passage_id) not in passage_ids:
+                passage_ids.append(int(passage_id))
         llm_passages = [p for p in ctx.passages if int(p["id"]) in passage_ids]
         company_context = db.query_one(
             "SELECT company_context FROM workspace_context WHERE workspace_id = ?",
@@ -128,6 +166,7 @@ def run_review(
             llm_passages,
             existing_summary,
             company_context["company_context"] if company_context else "",
+            ctx.rules,
         )
 
         if result.ok:
@@ -142,6 +181,7 @@ def run_review(
                 allowed,
                 [t["term"] for t in ctx.approved_terms],
                 approved_numbers,
+                {int(rule["id"]): rule for rule in ctx.rules},
             )
         else:
             llm_status = "timeout" if "timed out" in result.message.lower() else "error"

@@ -11,9 +11,10 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 export default function Layout() {
-  const { me, signOut } = useAuth()
+  const { me, workspaces, switchWorkspace, signOut } = useAuth()
   const navigate = useNavigate()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
 
   const canReview = me?.role === 'manager' || me?.role === 'approver' || me?.role === 'admin'
   const canCreate = me?.role === 'creator' || me?.role === 'admin'
@@ -62,6 +63,16 @@ export default function Layout() {
                 History
               </NavLink>
             )}
+            {me?.role === 'admin' && (
+              <NavLink to="/team" className={linkClass}>
+                Team access
+              </NavLink>
+            )}
+            {(me?.role === 'manager' || me?.role === 'admin') && (
+              <NavLink to="/operations" className={linkClass}>
+                Operations
+              </NavLink>
+            )}
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
@@ -74,6 +85,38 @@ export default function Layout() {
                   {ROLE_LABEL[me.role]} · {me.workspace_name}
                 </div>
               </div>
+            )}
+            {workspaces.length > 1 && (
+              <label className="sr-only" htmlFor="workspace-switcher">
+                Switch brand workspace
+              </label>
+            )}
+            {workspaces.length > 1 && (
+              <select
+                id="workspace-switcher"
+                className="input max-w-48 text-xs"
+                value={me?.workspace_id ?? ''}
+                aria-label="Switch brand workspace"
+                onChange={(event) => {
+                  setWorkspaceError(null)
+                  void switchWorkspace(Number(event.target.value)).catch((err: unknown) =>
+                    setWorkspaceError(
+                      err instanceof Error ? err.message : 'Could not switch workspace.',
+                    ),
+                  )
+                }}
+              >
+                {workspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>
+                    {workspace.organization_name} · {workspace.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {workspaceError && (
+              <span className="max-w-40 text-xs text-red-700" role="alert">
+                {workspaceError}
+              </span>
             )}
 
             <button
@@ -100,8 +143,8 @@ export default function Layout() {
                 signOut()
                 navigate('/')
               }}
-              aria-label="Switch role — leave this role and pick another demo role"
-              title="Leave this role and pick another demo role"
+              aria-label={me?.is_demo ? 'Switch demo role' : 'Sign out'}
+              title={me?.is_demo ? 'Leave this role and pick another demo role' : 'Sign out'}
             >
               <svg
                 className="h-5 w-5 sm:h-4 sm:w-4"
@@ -118,7 +161,7 @@ export default function Layout() {
                 <path d="M8 21H3v-5" />
                 <path d="M3 21l7-7" />
               </svg>
-              <span className="hidden sm:inline">Switch role</span>
+              <span className="hidden sm:inline">{me?.is_demo ? 'Switch role' : 'Sign out'}</span>
             </button>
           </div>
         </div>
@@ -129,7 +172,7 @@ export default function Layout() {
       </main>
 
       <footer className="border-t border-brand-100 bg-white px-4 py-4 text-center text-xs text-gray-500">
-        BrandShield AI · demo workspace with fictional data · nothing is auto-published
+        BrandShield AI · nothing is auto-published
       </footer>
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
