@@ -72,9 +72,11 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:5173. For the local role-selectable demo, set
-`VITE_DEMO_AUTH_ENABLED=true` in `frontend/.env.local` (the backend flag is
-enabled in the root `.env.example`).
+Open http://localhost:5173. The anonymous demo role selector is enabled by
+default; set `VITE_DEMO_AUTH_ENABLED=false` only when you want to hide it.
+Visitors choose a demo persona (no employee account or password) to enter the
+fictional seeded workspace. Vercel rewrites app routes to the SPA entry point so
+deep links work when opened directly.
 
 ### Business sign-in with Supabase
 
@@ -102,7 +104,7 @@ Set these frontend build variables:
 | `VITE_SUPABASE_URL` | The same Supabase project URL. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (or legacy anon key). This key is safe for browser use. |
 | `VITE_API_URL` | Backend origin when the API is hosted separately. |
-| `VITE_DEMO_AUTH_ENABLED` | Set to `false` in production. |
+| `VITE_DEMO_AUTH_ENABLED` | Optional. Set to `false` to hide public demo personas. |
 | `VITE_ORGANIZATION_CREATION_ENABLED` | Exposes first-organization onboarding; only useful when backend onboarding is enabled. |
 
 For local Supabase sign-in, create `frontend/.env.local` with the frontend

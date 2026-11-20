@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import Layout from './components/Layout'
 import { LoadingBlock } from './components/ui'
@@ -16,8 +16,9 @@ import Operations from './pages/Operations'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <LoadingBlock label="Restoring your session…" />
-  if (!me) return <Navigate to="/" replace />
+  if (!me) return <Navigate to="/" replace state={{ from: location }} />
   return <>{children}</>
 }
 

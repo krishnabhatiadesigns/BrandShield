@@ -17,4 +17,4 @@ export const supabase =
     })
     : null
 
-export const demoAuthEnabled = import.meta.env.VITE_DEMO_AUTH_ENABLED === 'true'
+export const demoAuthEnabled = import.meta.env.VITE_DEMO_AUTH_ENABLED !== 'false'

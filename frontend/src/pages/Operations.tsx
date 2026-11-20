@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { useAuth } from '../components/AuthContext'
 import { ErrorBanner, LoadingBlock, Spinner } from '../components/ui'
 
 export default function OperationsPage() {
+  const { me } = useAuth()
+  const canManageIntegrations = me?.role === 'admin'
   const [analytics, setAnalytics] = useState<Awaited<ReturnType<typeof api.operationsAnalytics>> | null>(null)
   const [apiKeys, setApiKeys] = useState<Awaited<ReturnType<typeof api.apiKeys>> | null>(null)
   const [webhooks, setWebhooks] = useState<Awaited<ReturnType<typeof api.webhooks>> | null>(null)
@@ -17,18 +20,17 @@ export default function OperationsPage() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [metrics, keys, endpoints] = await Promise.all([
-        api.operationsAnalytics(),
-        api.apiKeys(),
-        api.webhooks(),
-      ])
+      const metrics = await api.operationsAnalytics()
+      const [keys, endpoints] = canManageIntegrations
+        ? await Promise.all([api.apiKeys(), api.webhooks()])
+        : [[], []]
       setAnalytics(metrics)
       setApiKeys(keys)
       setWebhooks(endpoints)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load operations.')
     }
-  }, [])
+  }, [canManageIntegrations])
 
   useEffect(() => { void load() }, [load])
 
@@ -61,7 +63,7 @@ export default function OperationsPage() {
         Download audit CSV
       </button>
 
-      <section className="card space-y-3 p-4">
+      {canManageIntegrations && <section className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">API keys</h2>
         <div className="flex flex-wrap gap-2">
           <input className="input max-w-sm" value={keyName} maxLength={120}
@@ -93,9 +95,9 @@ export default function OperationsPage() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
 
-      <section className="card space-y-3 p-4">
+      {canManageIntegrations && <section className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Webhooks</h2>
         <div className="grid gap-2 sm:grid-cols-3">
           <input className="input" value={webhookName} maxLength={120}
@@ -131,7 +133,7 @@ export default function OperationsPage() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
     </div>
   )
 }

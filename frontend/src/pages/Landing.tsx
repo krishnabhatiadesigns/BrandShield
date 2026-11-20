@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../components/AuthContext'
 import HelpDialog from '../components/HelpDialog'
 import WorkflowDiagram from '../components/WorkflowDiagram'
@@ -83,6 +83,7 @@ export default function Landing() {
     createOrganization,
   } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [helpOpen, setHelpOpen] = useState(false)
   const [whyUsOpen, setWhyUsOpen] = useState(false)
   const [email, setEmail] = useState('')
@@ -115,7 +116,16 @@ export default function Landing() {
   }
 
   const start = async (role: 'creator' | 'manager' | 'approver') => {
-    if (await enterDemo(role)) navigate('/dashboard')
+    if (await enterDemo(role)) {
+      const state = location.state as {
+        from?: { pathname?: string; search?: string; hash?: string }
+      } | null
+      const from = state?.from
+      const destination = from?.pathname
+        ? `${from.pathname}${from.search ?? ''}${from.hash ?? ''}`
+        : '/dashboard'
+      navigate(destination, { replace: true })
+    }
   }
 
   const submitSignIn = async (event: React.FormEvent) => {
@@ -187,7 +197,7 @@ export default function Landing() {
           </div>
         </header>
 
-        {authEnabled && !me && (
+        {authEnabled && !demoEnabled && !me && (
           <form
             className="card mx-auto mt-8 max-w-xl space-y-4 p-5"
             onSubmit={(event) => void (resetMode ? submitPasswordReset(event) : submitSignIn(event))}
@@ -246,7 +256,7 @@ export default function Landing() {
             </div>
           </form>
         )}
-        {authEnabled && error && !me && (
+        {authEnabled && !demoEnabled && error && !me && (
           <div className="mx-auto mt-3 max-w-xl text-center">
             <button type="button" className="btn-ghost text-xs" onClick={signOut}>
               End this session
