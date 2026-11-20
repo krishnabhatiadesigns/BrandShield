@@ -10,14 +10,45 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
 from ..auth import Principal, require_role
 from ..db import Database, get_db
-from ..models import ApiKeyCreate, ReviewAssignmentUpdate, WebhookCreate
+from ..models import (
+    ApiKeyCreate,
+    ReviewAssignmentOut,
+    ReviewAssignmentUpdate,
+    WebhookCreate,
+    WorkspaceMemberOut,
+)
 from ..operations import safe_webhook_url
 from ..seed import now_iso
 
 router = APIRouter(prefix="/api/operations", tags=["operations"])
 
 
-@router.put("/content/{item_id}/assignment")
+@router.get("/reviewers", response_model=list[WorkspaceMemberOut])
+def list_reviewers(
+    principal: Principal = Depends(require_role("manager", "admin")),
+    db: Database = Depends(get_db),
+) -> list[WorkspaceMemberOut]:
+    rows = db.query(
+        "SELECT user_id, email, display_name, role, is_active, created_at"
+        " FROM memberships WHERE workspace_id = ? AND is_active = 1"
+        " AND role IN ('manager', 'approver', 'admin')"
+        " ORDER BY display_name, user_id",
+        (principal.workspace_id,),
+    )
+    return [
+        WorkspaceMemberOut(
+            user_id=row["user_id"],
+            email=row["email"],
+            display_name=row["display_name"],
+            role=row["role"],
+            is_active=bool(row["is_active"]),
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+@router.put("/content/{item_id}/assignment", response_model=ReviewAssignmentOut)
 def update_assignment(
     item_id: int,
     payload: ReviewAssignmentUpdate,

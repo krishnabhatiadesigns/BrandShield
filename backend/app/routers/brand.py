@@ -32,6 +32,40 @@ from ..text import ExtractionError, extract_pdf
 router = APIRouter(prefix="/api/brand", tags=["brand"])
 
 
+def _record_brand_change(
+    conn,
+    workspace_id: int,
+    actor: str,
+    action: str,
+    entity_type: str,
+    entity_id: int,
+    detail: str,
+    timestamp: str,
+) -> None:
+    conn.execute(
+        _sql(
+            "INSERT INTO audit_events (workspace_id, actor, action, entity_type,"
+            " entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?)"
+        ),
+        (workspace_id, actor, action, entity_type, entity_id, detail, timestamp),
+    )
+
+
+def _validate_source_passage(db: Database, workspace_id: int, passage_id: int | None) -> None:
+    if passage_id is None:
+        return
+    passage = db.query_one(
+        "SELECT p.id FROM passages p JOIN knowledge_documents d ON d.id = p.document_id"
+        " WHERE p.id = ? AND p.workspace_id = ? AND d.status = 'approved'",
+        (passage_id, workspace_id),
+    )
+    if not passage:
+        raise HTTPException(
+            status_code=422,
+            detail="Choose an approved source passage from this brand.",
+        )
+
+
 def _rule_out(row: dict) -> GuidelineRuleOut:
     return GuidelineRuleOut(
         id=int(row["id"]),
@@ -70,7 +104,8 @@ def get_profile(
     ws = principal.workspace_id
     passages = db.query(
         """
-        SELECT p.id, p.source, p.section, p.page, p.text
+        SELECT p.id, p.source, p.section, p.page, p.text, p.document_id,
+               CASE WHEN d.source_object_key IS NULL THEN 0 ELSE 1 END AS source_available
         FROM passages p JOIN knowledge_documents d ON d.id = p.document_id
         WHERE p.workspace_id = ? AND d.status = 'approved'
         ORDER BY p.id
@@ -302,19 +337,89 @@ def add_term(
     principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> TermOut:
-    db.insert(
-        "INSERT INTO terms (workspace_id, term, kind, replacement, notes, created_at)"
-        " VALUES (?,?,?,?,?,?)",
-        (principal.workspace_id, payload.term.strip(), payload.kind,
-         payload.replacement, payload.notes, now_iso()),
-    )
+    ts = now_iso()
+    with db.tx() as conn:
+        inserted = conn.execute(
+            _sql(
+                "INSERT INTO terms (workspace_id, term, kind, replacement, notes, created_at)"
+                " VALUES (?,?,?,?,?,?) RETURNING id"
+            ),
+            (principal.workspace_id, payload.term, payload.kind,
+             payload.replacement, payload.notes, ts),
+        ).fetchone()
+        term_id = int(inserted["id"])
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_term.created",
+            "brand_term", term_id, f"Added terminology: {payload.term}", ts,
+        )
     row = db.query_one(
-        "SELECT id, term, kind, replacement, notes FROM terms WHERE workspace_id = ?"
-        " ORDER BY id DESC LIMIT 1",
-        (principal.workspace_id,),
+        "SELECT id, term, kind, replacement, notes FROM terms WHERE id = ? AND workspace_id = ?",
+        (term_id, principal.workspace_id),
     )
     assert row is not None
     return TermOut(**row)
+
+
+@router.put("/terms/{term_id}", response_model=TermOut)
+def update_term(
+    term_id: int,
+    payload: TermCreate,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> TermOut:
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT term FROM terms WHERE id = ? AND workspace_id = ?"),
+            (term_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That brand term was not found.")
+        conn.execute(
+            _sql(
+                "UPDATE terms SET term = ?, kind = ?, replacement = ?, notes = ?"
+                " WHERE id = ? AND workspace_id = ?"
+            ),
+            (
+                payload.term, payload.kind, payload.replacement, payload.notes,
+                term_id, principal.workspace_id,
+            ),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_term.updated",
+            "brand_term", term_id, f"Updated terminology: {current['term']} → {payload.term}", ts,
+        )
+    row = db.query_one(
+        "SELECT id, term, kind, replacement, notes FROM terms WHERE id = ? AND workspace_id = ?",
+        (term_id, principal.workspace_id),
+    )
+    assert row is not None
+    return TermOut(**row)
+
+
+@router.delete("/terms/{term_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_term(
+    term_id: int,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> Response:
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT term FROM terms WHERE id = ? AND workspace_id = ?"),
+            (term_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That brand term was not found.")
+        conn.execute(
+            _sql("DELETE FROM terms WHERE id = ? AND workspace_id = ?"),
+            (term_id, principal.workspace_id),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_term.deleted",
+            "brand_term", term_id, f"Deleted terminology: {current['term']}", ts,
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/facts", response_model=FactOut, status_code=status.HTTP_201_CREATED)
@@ -323,19 +428,95 @@ def add_fact(
     principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> FactOut:
-    db.insert(
-        "INSERT INTO facts (workspace_id, fact_key, value, unit, source_passage_id,"
-        " effective_date, created_at) VALUES (?,?,?,?,NULL,?,?)",
-        (principal.workspace_id, payload.fact_key.strip(), payload.value.strip(),
-         payload.unit, now_iso()[:10], now_iso()),
-    )
+    _validate_source_passage(db, principal.workspace_id, payload.source_passage_id)
+    ts = now_iso()
+    with db.tx() as conn:
+        inserted = conn.execute(
+            _sql(
+                "INSERT INTO facts (workspace_id, fact_key, value, unit, source_passage_id,"
+                " effective_date, created_at) VALUES (?,?,?,?,?,?,?) RETURNING id"
+            ),
+            (
+                principal.workspace_id, payload.fact_key, payload.value,
+                payload.unit, payload.source_passage_id, ts[:10], ts,
+            ),
+        ).fetchone()
+        fact_id = int(inserted["id"])
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_fact.created",
+            "brand_fact", fact_id, f"Added approved fact: {payload.fact_key}", ts,
+        )
     row = db.query_one(
-        "SELECT id, fact_key, value, unit, source_passage_id FROM facts WHERE workspace_id = ?"
-        " ORDER BY id DESC LIMIT 1",
-        (principal.workspace_id,),
+        "SELECT id, fact_key, value, unit, source_passage_id FROM facts"
+        " WHERE id = ? AND workspace_id = ?",
+        (fact_id, principal.workspace_id),
     )
     assert row is not None
     return FactOut(**row)
+
+
+@router.put("/facts/{fact_id}", response_model=FactOut)
+def update_fact(
+    fact_id: int,
+    payload: FactCreate,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> FactOut:
+    _validate_source_passage(db, principal.workspace_id, payload.source_passage_id)
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT fact_key FROM facts WHERE id = ? AND workspace_id = ?"),
+            (fact_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That approved fact was not found.")
+        conn.execute(
+            _sql(
+                "UPDATE facts SET fact_key = ?, value = ?, unit = ?, source_passage_id = ?"
+                " WHERE id = ? AND workspace_id = ?"
+            ),
+            (
+                payload.fact_key, payload.value, payload.unit, payload.source_passage_id,
+                fact_id, principal.workspace_id,
+            ),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_fact.updated",
+            "brand_fact", fact_id, f"Updated approved fact: {current['fact_key']} → {payload.fact_key}", ts,
+        )
+    row = db.query_one(
+        "SELECT id, fact_key, value, unit, source_passage_id FROM facts"
+        " WHERE id = ? AND workspace_id = ?",
+        (fact_id, principal.workspace_id),
+    )
+    assert row is not None
+    return FactOut(**row)
+
+
+@router.delete("/facts/{fact_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_fact(
+    fact_id: int,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> Response:
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT fact_key FROM facts WHERE id = ? AND workspace_id = ?"),
+            (fact_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That approved fact was not found.")
+        conn.execute(
+            _sql("DELETE FROM facts WHERE id = ? AND workspace_id = ?"),
+            (fact_id, principal.workspace_id),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_fact.deleted",
+            "brand_fact", fact_id, f"Deleted approved fact: {current['fact_key']}", ts,
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/palette", response_model=PaletteOut, status_code=status.HTTP_201_CREATED)
@@ -344,18 +525,85 @@ def add_palette(
     principal: Principal = Depends(require_role("manager")),
     db: Database = Depends(get_db),
 ) -> PaletteOut:
-    db.insert(
-        "INSERT INTO palette_colors (workspace_id, name, hex, role, created_at) VALUES (?,?,?,?,?)",
-        (principal.workspace_id, payload.name.strip(), payload.hex.upper(), payload.role, now_iso()),
-    )
+    ts = now_iso()
+    with db.tx() as conn:
+        inserted = conn.execute(
+            _sql(
+                "INSERT INTO palette_colors (workspace_id, name, hex, role, created_at)"
+                " VALUES (?,?,?,?,?) RETURNING id"
+            ),
+            (principal.workspace_id, payload.name, payload.hex, payload.role, ts),
+        ).fetchone()
+        palette_id = int(inserted["id"])
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_palette.created",
+            "brand_palette", palette_id, f"Added palette colour: {payload.name}", ts,
+        )
     row = db.query_one(
-        "SELECT id, name, hex, role FROM palette_colors WHERE workspace_id = ? ORDER BY id DESC LIMIT 1",
-        (principal.workspace_id,),
+        "SELECT id, name, hex, role FROM palette_colors WHERE id = ? AND workspace_id = ?",
+        (palette_id, principal.workspace_id),
     )
     assert row is not None
     return PaletteOut(**row)
 
 
+@router.put("/palette/{color_id}", response_model=PaletteOut)
+def update_palette(
+    color_id: int,
+    payload: PaletteCreate,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> PaletteOut:
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT name FROM palette_colors WHERE id = ? AND workspace_id = ?"),
+            (color_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That palette colour was not found.")
+        conn.execute(
+            _sql(
+                "UPDATE palette_colors SET name = ?, hex = ?, role = ?"
+                " WHERE id = ? AND workspace_id = ?"
+            ),
+            (payload.name, payload.hex, payload.role, color_id, principal.workspace_id),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_palette.updated",
+            "brand_palette", color_id, f"Updated palette colour: {current['name']} → {payload.name}", ts,
+        )
+    row = db.query_one(
+        "SELECT id, name, hex, role FROM palette_colors WHERE id = ? AND workspace_id = ?",
+        (color_id, principal.workspace_id),
+    )
+    assert row is not None
+    return PaletteOut(**row)
+
+
+@router.delete("/palette/{color_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_palette(
+    color_id: int,
+    principal: Principal = Depends(require_role("manager")),
+    db: Database = Depends(get_db),
+) -> Response:
+    ts = now_iso()
+    with db.tx() as conn:
+        current = conn.execute(
+            _sql("SELECT name FROM palette_colors WHERE id = ? AND workspace_id = ?"),
+            (color_id, principal.workspace_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="That palette colour was not found.")
+        conn.execute(
+            _sql("DELETE FROM palette_colors WHERE id = ? AND workspace_id = ?"),
+            (color_id, principal.workspace_id),
+        )
+        _record_brand_change(
+            conn, principal.workspace_id, principal.display_name, "brand_palette.deleted",
+            "brand_palette", color_id, f"Deleted palette colour: {current['name']}", ts,
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 @router.post("/passages", response_model=PassageOut, status_code=status.HTTP_201_CREATED)
 def add_passage(
     payload: PassageCreate,

@@ -4,8 +4,12 @@ import { useAuth } from '../components/AuthContext'
 import { ErrorBanner, LoadingBlock, Spinner } from '../components/ui'
 import type {
   BrandProfile,
+  Fact,
   GuidelineRule,
   GuidelineRulePayload,
+  PaletteColor,
+  Passage,
+  Term,
   VisualCheckResponse,
 } from '../types'
 
@@ -536,20 +540,55 @@ function GuidelinesTab({
       )}
 
       <div className="space-y-2">
-        {profile.passages.map((p) => (
-          <article key={p.id} className="card p-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-              <span className="badge bg-brand-100 text-brand-800">approved</span>
-              <span className="font-semibold text-charcoal">{p.source}</span>
-              {p.section && <span>· {p.section}</span>}
-              {p.page && <span>· p.{p.page}</span>}
-              <span className="ml-auto font-mono text-[11px]">#{p.id}</span>
-            </div>
-            <p className="mt-1.5 text-sm text-gray-700">{p.text}</p>
-          </article>
-        ))}
+        {profile.passages.length ? (
+          profile.passages.map((p) => <GuidelinePassage key={p.id} passage={p} />)
+        ) : (
+          <p className="card p-4 text-sm text-gray-600">No approved guideline passages yet.</p>
+        )}
       </div>
     </div>
+  )
+}
+
+function GuidelinePassage({ passage }: { passage: Passage }) {
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const downloadSource = async () => {
+    if (!passage.document_id) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.downloadGuidelineSource(passage.document_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not download the source document.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <article className="card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <span className="badge bg-brand-100 text-brand-800">approved</span>
+        <span className="font-semibold text-charcoal">{passage.source}</span>
+        {passage.section && <span>· {passage.section}</span>}
+        {passage.page && <span>· p.{passage.page}</span>}
+        <span className="font-mono text-[11px]">#{passage.id}</span>
+        {passage.source_available && passage.document_id && (
+          <button
+            type="button"
+            className="btn-secondary ml-auto px-2 py-1 text-xs"
+            disabled={busy}
+            onClick={() => void downloadSource()}
+          >
+            {busy ? 'Downloading…' : 'Download source'}
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-700" role="alert">{error}</p>}
+      <p className="mt-1.5 text-sm text-gray-700">{passage.text}</p>
+    </article>
   )
 }
 
@@ -567,6 +606,7 @@ function TermsTab({
   const [term, setTerm] = useState('')
   const [kind, setKind] = useState<'approved' | 'prohibited'>('prohibited')
   const [replacement, setReplacement] = useState('')
+  const [notes, setNotes] = useState('')
 
   const approved = profile.terms.filter((t) => t.kind === 'approved')
   const prohibited = profile.terms.filter((t) => t.kind === 'prohibited')
@@ -578,7 +618,7 @@ function TermsTab({
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Add a term
           </h2>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <input
               className="input"
               placeholder="Term"
@@ -599,6 +639,12 @@ function TermsTab({
               value={replacement}
               onChange={(e) => setReplacement(e.target.value)}
             />
+            <input
+              className="input"
+              placeholder="Notes (optional)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
           </div>
           <button
             className="btn-primary"
@@ -610,12 +656,14 @@ function TermsTab({
                     term: term.trim(),
                     kind,
                     replacement: replacement.trim() || undefined,
+                    notes: notes.trim() || undefined,
                   }),
                 'Term added.',
               ).then((saved) => {
                 if (!saved) return
                 setTerm('')
                 setReplacement('')
+                setNotes('')
               })
             }
           >
@@ -630,27 +678,128 @@ function TermsTab({
           <h3 className="mb-2 text-sm font-semibold text-red-800">Prohibited</h3>
           <ul className="space-y-1.5 text-sm">
             {prohibited.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-baseline gap-2">
-                <span className="font-mono text-red-900">{t.term}</span>
-                {t.replacement && (
-                  <span className="text-xs text-gray-500">→ {t.replacement}</span>
-                )}
-              </li>
+              <TermRow key={t.id} term={t} canEdit={canEdit} busy={busy} run={run} />
             ))}
+            {!prohibited.length && <li className="text-gray-500">No prohibited terms.</li>}
           </ul>
         </section>
         <section className="card p-4">
           <h3 className="mb-2 text-sm font-semibold text-brand-800">Approved</h3>
           <ul className="space-y-1.5 text-sm">
             {approved.map((t) => (
-              <li key={t.id} className="font-mono text-brand-900">
-                {t.term}
-              </li>
+              <TermRow key={t.id} term={t} canEdit={canEdit} busy={busy} run={run} />
             ))}
+            {!approved.length && <li className="text-gray-500">No approved terms.</li>}
           </ul>
         </section>
       </div>
     </div>
+  )
+}
+
+function TermRow({
+  term,
+  canEdit,
+  busy,
+  run,
+}: {
+  term: Term
+  canEdit: boolean
+  busy: boolean
+  run: RunFn
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(term.term)
+  const [kind, setKind] = useState(term.kind === 'approved' ? 'approved' : 'prohibited')
+  const [replacement, setReplacement] = useState(term.replacement ?? '')
+  const [notes, setNotes] = useState(term.notes ?? '')
+
+  const save = async () => {
+    const saved = await run(
+      () => api.updateTerm(term.id, {
+        term: value.trim(),
+        kind,
+        replacement: replacement.trim() || null,
+        notes: notes.trim() || null,
+      }),
+      'Term updated.',
+    )
+    if (saved) setEditing(false)
+  }
+
+  const cancel = () => {
+    setValue(term.term)
+    setKind(term.kind === 'approved' ? 'approved' : 'prohibited')
+    setReplacement(term.replacement ?? '')
+    setNotes(term.notes ?? '')
+    setEditing(false)
+  }
+
+  const remove = () => {
+    if (!window.confirm(`Delete “${term.term}”? It will no longer be used in future checks.`)) return
+    void run(() => api.deleteTerm(term.id), 'Term deleted.')
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 border-b border-gray-100 py-2 last:border-0">
+      {editing ? (
+        <>
+          <input
+            className="input min-w-32 flex-1"
+            aria-label="Term"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+          <select
+            className="input w-auto"
+            aria-label="Term type"
+            value={kind}
+            onChange={(event) => setKind(event.target.value as 'approved' | 'prohibited')}
+          >
+            <option value="prohibited">Prohibited</option>
+            <option value="approved">Approved</option>
+          </select>
+          <input
+            className="input min-w-32 flex-1"
+            aria-label="Suggested replacement"
+            placeholder="Suggested replacement"
+            value={replacement}
+            onChange={(event) => setReplacement(event.target.value)}
+          />
+          <input
+            className="input min-w-32 flex-1"
+            aria-label="Term notes"
+            placeholder="Notes (optional)"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+          <button className="btn-primary px-2 py-1 text-xs" disabled={busy || !value.trim()} onClick={() => void save()}>
+            Save
+          </button>
+          <button className="btn-secondary px-2 py-1 text-xs" disabled={busy} onClick={cancel}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <span className={`font-mono ${term.kind === 'approved' ? 'text-brand-900' : 'text-red-900'}`}>
+            {term.term}
+          </span>
+          {term.replacement && <span className="text-xs text-gray-500">→ {term.replacement}</span>}
+          {term.notes && <span className="text-xs text-gray-500">{term.notes}</span>}
+          {canEdit && (
+            <span className="ml-auto flex gap-2">
+              <button type="button" className="text-xs font-semibold text-brand-700 underline" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+              <button type="button" className="text-xs font-semibold text-red-700 underline" disabled={busy} onClick={remove}>
+                Delete
+              </button>
+            </span>
+          )}
+        </>
+      )}
+    </li>
   )
 }
 
@@ -668,6 +817,7 @@ function FactsTab({
   const [key, setKey] = useState('')
   const [value, setValue] = useState('')
   const [unit, setUnit] = useState('')
+  const [sourcePassageId, setSourcePassageId] = useState('')
 
   return (
     <div className="space-y-4">
@@ -696,6 +846,21 @@ function FactsTab({
               onChange={(e) => setUnit(e.target.value)}
             />
           </div>
+          <label className="block">
+            <span className="label">Supporting approved passage (optional)</span>
+            <select
+              className="input"
+              value={sourcePassageId}
+              onChange={(event) => setSourcePassageId(event.target.value)}
+            >
+              <option value="">No linked source</option>
+              {profile.passages.map((passage) => (
+                <option key={passage.id} value={passage.id}>
+                  {passage.source}{passage.page ? ` · p.${passage.page}` : ''} — #{passage.id}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             className="btn-primary"
             disabled={busy || !key.trim() || !value.trim()}
@@ -706,6 +871,7 @@ function FactsTab({
                     fact_key: key.trim(),
                     value: value.trim(),
                     unit: unit.trim() || undefined,
+                    source_passage_id: sourcePassageId ? Number(sourcePassageId) : null,
                   }),
                 'Fact added.',
               ).then((saved) => {
@@ -713,6 +879,7 @@ function FactsTab({
                 setKey('')
                 setValue('')
                 setUnit('')
+                setSourcePassageId('')
               })
             }
           >
@@ -730,23 +897,127 @@ function FactsTab({
               <th className="px-4 py-2">Value</th>
               <th className="px-4 py-2">Unit</th>
               <th className="px-4 py-2">Source passage</th>
+              {canEdit && <th className="px-4 py-2">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {profile.facts.map((f) => (
-              <tr key={f.id} className="border-t border-gray-100">
-                <td className="px-4 py-2 font-mono text-xs">{f.fact_key}</td>
-                <td className="px-4 py-2 font-semibold">{f.value}</td>
-                <td className="px-4 py-2 text-gray-500">{f.unit ?? '—'}</td>
-                <td className="px-4 py-2 text-gray-500">
-                  {f.source_passage_id ? `#${f.source_passage_id}` : 'none'}
-                </td>
-              </tr>
+              <FactRow
+                key={f.id}
+                fact={f}
+                passages={profile.passages}
+                canEdit={canEdit}
+                busy={busy}
+                run={run}
+              />
             ))}
+            {!profile.facts.length && (
+              <tr><td colSpan={canEdit ? 5 : 4} className="px-4 py-3 text-gray-500">No approved facts yet.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
     </div>
+  )
+}
+
+function FactRow({
+  fact,
+  passages,
+  canEdit,
+  busy,
+  run,
+}: {
+  fact: Fact
+  passages: Passage[]
+  canEdit: boolean
+  busy: boolean
+  run: RunFn
+}) {
+  const [editing, setEditing] = useState(false)
+  const [key, setKey] = useState(fact.fact_key)
+  const [value, setValue] = useState(fact.value)
+  const [unit, setUnit] = useState(fact.unit ?? '')
+  const [sourcePassageId, setSourcePassageId] = useState(
+    fact.source_passage_id ? String(fact.source_passage_id) : '',
+  )
+
+  const save = async () => {
+    const saved = await run(
+      () =>
+        api.updateFact(fact.id, {
+          fact_key: key.trim(),
+          value: value.trim(),
+          unit: unit.trim() || null,
+          source_passage_id: sourcePassageId ? Number(sourcePassageId) : null,
+        }),
+      'Fact updated.',
+    )
+    if (saved) setEditing(false)
+  }
+
+  const cancel = () => {
+    setKey(fact.fact_key)
+    setValue(fact.value)
+    setUnit(fact.unit ?? '')
+    setSourcePassageId(fact.source_passage_id ? String(fact.source_passage_id) : '')
+    setEditing(false)
+  }
+
+  const remove = () => {
+    if (!window.confirm(`Delete approved fact “${fact.fact_key}”? Future checks will no longer use it.`)) return
+    void run(() => api.deleteFact(fact.id), 'Fact deleted.')
+  }
+
+  return (
+    <tr className="border-t border-gray-100">
+      <td className="px-4 py-2 font-mono text-xs">
+        {editing ? <input className="input" aria-label="Fact key" value={key} onChange={(event) => setKey(event.target.value)} /> : fact.fact_key}
+      </td>
+      <td className="px-4 py-2 font-semibold">
+        {editing ? <input className="input" aria-label="Fact value" value={value} onChange={(event) => setValue(event.target.value)} /> : fact.value}
+      </td>
+      <td className="px-4 py-2 text-gray-500">
+        {editing ? <input className="input" aria-label="Fact unit" value={unit} onChange={(event) => setUnit(event.target.value)} /> : fact.unit ?? '—'}
+      </td>
+      <td className="px-4 py-2 text-gray-500">
+        {editing ? (
+          <select
+            className="input"
+            aria-label="Supporting source passage"
+            value={sourcePassageId}
+            onChange={(event) => setSourcePassageId(event.target.value)}
+          >
+            <option value="">No linked source</option>
+            {passages.map((passage) => (
+              <option key={passage.id} value={passage.id}>
+                {passage.source}{passage.page ? ` · p.${passage.page}` : ''} — #{passage.id}
+              </option>
+            ))}
+          </select>
+        ) : fact.source_passage_id ? (
+          passages.find((passage) => passage.id === fact.source_passage_id)?.source ??
+          `#${fact.source_passage_id}`
+        ) : (
+          'none'
+        )}
+      </td>
+      {canEdit && (
+        <td className="px-4 py-2">
+          {editing ? (
+            <div className="flex gap-2">
+              <button className="text-xs font-semibold text-brand-700 underline" disabled={busy || !key.trim() || !value.trim()} onClick={() => void save()}>Save</button>
+              <button className="text-xs font-semibold text-gray-600 underline" disabled={busy} onClick={cancel}>Cancel</button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button className="text-xs font-semibold text-brand-700 underline" onClick={() => setEditing(true)}>Edit</button>
+              <button className="text-xs font-semibold text-red-700 underline" disabled={busy} onClick={remove}>Delete</button>
+            </div>
+          )}
+        </td>
+      )}
+    </tr>
   )
 }
 
@@ -818,16 +1089,85 @@ function PaletteTab({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {profile.palette.map((c) => (
-          <div key={c.id} className="card overflow-hidden">
-            <div className="h-20 w-full" style={{ backgroundColor: c.hex }} />
-            <div className="p-3">
-              <div className="text-sm font-semibold text-charcoal">{c.name}</div>
-              <div className="font-mono text-xs text-gray-500">{c.hex}</div>
-              {c.role && <div className="mt-0.5 text-xs text-gray-500">{c.role}</div>}
-            </div>
-          </div>
+        {profile.palette.map((color) => (
+          <PaletteCard key={color.id} color={color} canEdit={canEdit} busy={busy} run={run} />
         ))}
+        {!profile.palette.length && (
+          <p className="card p-4 text-sm text-gray-600">No brand colours have been configured.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PaletteCard({
+  color,
+  canEdit,
+  busy,
+  run,
+}: {
+  color: PaletteColor
+  canEdit: boolean
+  busy: boolean
+  run: RunFn
+}) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(color.name)
+  const [hex, setHex] = useState(color.hex)
+  const [role, setRole] = useState(color.role ?? '')
+
+  const save = async () => {
+    const saved = await run(
+      () => api.updatePalette(color.id, { name: name.trim(), hex, role: role.trim() || null }),
+      'Palette colour updated.',
+    )
+    if (saved) setEditing(false)
+  }
+
+  const cancel = () => {
+    setName(color.name)
+    setHex(color.hex)
+    setRole(color.role ?? '')
+    setEditing(false)
+  }
+
+  const remove = () => {
+    if (!window.confirm(`Delete “${color.name}” from the brand palette?`)) return
+    void run(() => api.deletePalette(color.id), 'Palette colour deleted.')
+  }
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="h-20 w-full" style={{ backgroundColor: editing ? hex : color.hex }} />
+      <div className="space-y-2 p-3">
+        {editing ? (
+          <>
+            <input className="input" aria-label="Colour name" value={name} onChange={(event) => setName(event.target.value)} />
+            <input className="input font-mono" aria-label="Colour hex" value={hex} onChange={(event) => setHex(event.target.value)} />
+            <input className="input" aria-label="Colour role" placeholder="Role (optional)" value={role} onChange={(event) => setRole(event.target.value)} />
+          </>
+        ) : (
+          <>
+            <div className="text-sm font-semibold text-charcoal">{color.name}</div>
+            <div className="font-mono text-xs text-gray-500">{color.hex}</div>
+            {color.role && <div className="text-xs text-gray-500">{color.role}</div>}
+          </>
+        )}
+        {canEdit && (
+          <div className="flex gap-3">
+            {editing ? (
+              <>
+                <button className="text-xs font-semibold text-brand-700 underline" disabled={busy || !name.trim() || !/^#[0-9a-fA-F]{6}$/.test(hex)} onClick={() => void save()}>Save</button>
+                <button className="text-xs font-semibold text-gray-600 underline" disabled={busy} onClick={cancel}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button className="text-xs font-semibold text-brand-700 underline" onClick={() => setEditing(true)}>Edit</button>
+                <button className="text-xs font-semibold text-red-700 underline" disabled={busy} onClick={remove}>Delete</button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

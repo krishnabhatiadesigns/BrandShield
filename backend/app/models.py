@@ -188,6 +188,16 @@ class ReviewRunOut(BaseModel):
     duration_ms: int
 
 
+class ReviewAssignmentOut(BaseModel):
+    content_item_id: int
+    workspace_id: int
+    assignee_user_id: str | None
+    assignee_name: str | None
+    due_at: str | None
+    updated_by: str
+    updated_at: str
+
+
 class ContentDetail(BaseModel):
     id: int
     title: str
@@ -197,6 +207,7 @@ class ContentDetail(BaseModel):
     created_at: str
     updated_at: str
     source_filename: str | None = None
+    assignment: ReviewAssignmentOut | None = None
     current_version: VersionOut | None
     findings: list[FindingOut]
     review_run: ReviewRunOut | None
@@ -214,6 +225,8 @@ class ContentSummary(BaseModel):
     version_no: int
     open_high: int
     needs_verification: int
+    assigned_to: str | None = None
+    due_at: str | None = None
 
 
 class FindingDecisionRequest(BaseModel):
@@ -291,6 +304,8 @@ class PassageOut(BaseModel):
     section: str | None
     page: int | None
     text: str
+    document_id: int | None = None
+    source_available: bool = False
 
 
 class TermOut(BaseModel):
@@ -419,14 +434,47 @@ class CompanyContextUpdate(BaseModel):
 class TermCreate(BaseModel):
     term: str = Field(min_length=1, max_length=120)
     kind: Literal["approved", "prohibited"]
-    replacement: str | None = None
-    notes: str | None = None
+    replacement: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("term")
+    @classmethod
+    def normalized_term(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Term cannot be blank.")
+        return normalized
+
+    @field_validator("replacement", "notes")
+    @classmethod
+    def normalized_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class FactCreate(BaseModel):
     fact_key: str = Field(min_length=1, max_length=80)
     value: str = Field(min_length=1, max_length=200)
-    unit: str | None = None
+    unit: str | None = Field(default=None, max_length=80)
+    source_passage_id: int | None = None
+
+    @field_validator("fact_key", "value")
+    @classmethod
+    def normalized_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("This field cannot be blank.")
+        return normalized
+
+    @field_validator("unit")
+    @classmethod
+    def normalized_optional_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class PassageCreate(BaseModel):
@@ -438,7 +486,28 @@ class PassageCreate(BaseModel):
 class PaletteCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     hex: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
-    role: str | None = None
+    role: str | None = Field(default=None, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def normalized_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Colour name cannot be blank.")
+        return normalized
+
+    @field_validator("hex")
+    @classmethod
+    def normalized_hex(cls, value: str) -> str:
+        return value.upper()
+
+    @field_validator("role")
+    @classmethod
+    def normalized_role(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 # --- visual ----------------------------------------------------------------

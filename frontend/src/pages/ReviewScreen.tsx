@@ -12,11 +12,24 @@ import {
   Spinner,
   StatusBadge,
 } from '../components/ui'
-import type { ContentDetail, Finding } from '../types'
+import type { ContentDetail, Finding, WorkspaceMember } from '../types'
 
 interface Segment {
   text: string
   finding: Finding | null
+}
+
+function dateTimeLocalValue(value: string | null | undefined): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function formatDueAt(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 /** Build non-overlapping highlight segments from the draft and its findings. */
@@ -249,32 +262,86 @@ export default function ReviewScreen() {
   const itemId = Number(id)
   const navigate = useNavigate()
   const { me } = useAuth()
+  const isManager = me?.role === 'manager' || me?.role === 'admin'
 
   const [item, setItem] = useState<ContentDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeId, setActiveId] = useState<number | null>(null)
   const [editingDraft, setEditingDraft] = useState(false)
   const [draftText, setDraftText] = useState('')
   const [editNote, setEditNote] = useState('')
+  const [reviewers, setReviewers] = useState<WorkspaceMember[] | null>(null)
+  const [assigneeId, setAssigneeId] = useState('')
+  const [dueAt, setDueAt] = useState('')
+  const [assignmentBusy, setAssignmentBusy] = useState(false)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  const [assignmentSaved, setAssignmentSaved] = useState(false)
   const draftRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setError(null)
     try {
-      setItem(await api.getContent(itemId))
+      const content = await api.getContent(itemId)
+      setItem(content)
+      setCategoryFilter('all')
+      setAssigneeId(content.assignment?.assignee_user_id ?? '')
+      setDueAt(dateTimeLocalValue(content.assignment?.due_at))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load this submission.')
     }
   }, [itemId])
 
+  const loadReviewers = useCallback(async () => {
+    if (!isManager) return
+    setAssignmentError(null)
+    try {
+      setReviewers(await api.reviewers())
+    } catch (err) {
+      setAssignmentError(err instanceof Error ? err.message : 'Could not load reviewers.')
+    }
+  }, [isManager])
+
   useEffect(() => {
     void load()
   }, [load])
 
+  useEffect(() => {
+    void loadReviewers()
+  }, [loadReviewers])
+
+  const saveAssignment = async () => {
+    setAssignmentBusy(true)
+    setAssignmentError(null)
+    setAssignmentSaved(false)
+    try {
+      const assignment = await api.assignment(itemId, {
+        assignee_user_id: assigneeId || null,
+        due_at: dueAt ? `${dueAt}:00` : null,
+      })
+      setItem((current) => current ? { ...current, assignment } : current)
+      setAssignmentSaved(true)
+    } catch (err) {
+      setAssignmentError(err instanceof Error ? err.message : 'Could not save the assignment.')
+    } finally {
+      setAssignmentBusy(false)
+    }
+  }
+
   const findings = item?.findings ?? []
   const body = item?.current_version?.body ?? ''
   const segments = useMemo(() => buildSegments(body, findings), [body, findings])
+  const categories = useMemo(
+    () => Array.from(new Set(findings.map((finding) => finding.category))).sort(),
+    [findings],
+  )
+  const visibleFindings = useMemo(
+    () => categoryFilter === 'all'
+      ? findings
+      : findings.filter((finding) => finding.category === categoryFilter),
+    [categoryFilter, findings],
+  )
 
   const decidedCount = findings.filter((f) => f.creator_decision !== 'pending').length
   const openHigh = findings.filter(
@@ -324,7 +391,6 @@ export default function ReviewScreen() {
   const isFinal = status === 'Approved' || status === 'Rejected'
   const canSendOn = status === 'Draft' || status === 'AI Review Complete' || status === 'Changes Required'
 
-  const isManager = me?.role === 'manager' || me?.role === 'admin'
   const isApprover = me?.role === 'approver' || me?.role === 'admin'
   const returnToManagerPrefix = 'Sent back to the manager: '
   const returnToCreatorPrefix = 'Sent back to the creator: '
@@ -464,6 +530,89 @@ export default function ReviewScreen() {
           </span>
         )}
       </div>
+
+      {(isManager || item.assignment) && (
+        <section className="card space-y-3 p-4" aria-labelledby="assignment-title">
+          <div>
+            <h2 id="assignment-title" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Reviewer assignment
+            </h2>
+            {!isManager && (
+              <p className="mt-1 text-sm text-gray-700">
+                Assigned to {item.assignment?.assignee_name || 'a reviewer'}
+                {item.assignment?.due_at ? ` · Due ${formatDueAt(item.assignment.due_at)}` : ''}
+              </p>
+            )}
+          </div>
+          {isManager && (
+            <>
+              {assignmentError && (
+                <ErrorBanner message={assignmentError} />
+              )}
+              {assignmentError && reviewers === null && (
+                <button type="button" className="btn-secondary text-xs" onClick={() => void loadReviewers()}>
+                  Retry loading reviewers
+                </button>
+              )}
+              {reviewers === null && !assignmentError ? (
+                <LoadingBlock label="Loading active reviewers…" />
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                  <label className="text-xs font-medium text-gray-700" htmlFor="reviewer-assignee">
+                    Assign to
+                    <select
+                      id="reviewer-assignee"
+                      className="input mt-1"
+                      value={assigneeId}
+                      disabled={reviewers === null || assignmentBusy}
+                      onChange={(event) => {
+                        setAssigneeId(event.target.value)
+                        setAssignmentSaved(false)
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {(reviewers ?? []).map((reviewer) => (
+                        <option key={reviewer.user_id} value={reviewer.user_id}>
+                          {reviewer.display_name} ({reviewer.role})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-gray-700" htmlFor="reviewer-due-at">
+                    Due date and time
+                    <input
+                      id="reviewer-due-at"
+                      className="input mt-1"
+                      type="datetime-local"
+                      value={dueAt}
+                      disabled={assignmentBusy}
+                      onChange={(event) => {
+                        setDueAt(event.target.value)
+                        setAssignmentSaved(false)
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={reviewers === null || assignmentBusy}
+                    onClick={() => void saveAssignment()}
+                  >
+                    {assignmentBusy ? <Spinner /> : null}
+                    Save assignment
+                  </button>
+                </div>
+              )}
+              {reviewers?.length === 0 && (
+                <p className="text-xs text-gray-500">No active manager or approver accounts are available.</p>
+              )}
+              {assignmentSaved && (
+                <p className="text-xs font-medium text-brand-700" role="status">Assignment saved.</p>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       {returnNotes.length > 0 && returnNotePrefix && (
         <section
@@ -692,20 +841,45 @@ export default function ReviewScreen() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Findings
+              Findings ({visibleFindings.length}/{findings.length})
             </h2>
-            {openHigh > 0 && (
-              <span className="badge bg-red-100 text-red-800">{openHigh} high open</span>
-            )}
+            <div className="flex items-center gap-2">
+              {openHigh > 0 && (
+                <span className="badge bg-red-100 text-red-800">{openHigh} high open</span>
+              )}
+              {categories.length > 1 && (
+                <label className="sr-only" htmlFor="finding-category-filter">
+                  Filter findings by category
+                </label>
+              )}
+              {categories.length > 1 && (
+                <select
+                  id="finding-category-filter"
+                  className="input w-auto py-1 text-xs"
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  aria-label="Filter findings by category"
+                >
+                  <option value="all">All categories</option>
+                  {categories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
           {findings.length === 0 ? (
             <div className="card p-6 text-center text-sm text-gray-600">
               No issues found in this version. You can submit it for approval.
             </div>
+          ) : visibleFindings.length === 0 ? (
+            <div className="card p-6 text-center text-sm text-gray-600">
+              No findings match this category. Choose another category or show all findings.
+            </div>
           ) : (
             <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
-              {findings.map((f) => (
+              {visibleFindings.map((f) => (
                 <FindingCard
                   key={f.id}
                   finding={f}

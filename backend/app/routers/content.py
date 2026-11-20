@@ -23,6 +23,7 @@ from ..models import (
     FindingDecisionRequest,
     FindingOut,
     ReviewRunOut,
+    ReviewAssignmentOut,
     SampleInfo,
     SendBackRequest,
     VersionOut,
@@ -111,6 +112,11 @@ def _detail(db: Database, ws_id: int, item: dict[str, Any]) -> ContentDetail:
     run = None
     comments: list[CommentOut] = []
     approvals: list[ApprovalOut] = []
+    assignment_row = db.query_one(
+        "SELECT * FROM review_assignments WHERE content_item_id = ? AND workspace_id = ?",
+        (int(item["id"]), ws_id),
+    )
+    assignment = ReviewAssignmentOut(**assignment_row) if assignment_row else None
 
     if item.get("current_version_id"):
         ver = db.query_one(
@@ -170,6 +176,7 @@ def _detail(db: Database, ws_id: int, item: dict[str, Any]) -> ContentDetail:
         created_at=item["created_at"],
         updated_at=item["updated_at"],
         source_filename=item.get("source_filename"),
+        assignment=assignment,
         current_version=version,
         findings=findings,
         review_run=run,
@@ -212,6 +219,8 @@ def _summary(db: Database, ws_id: int, item: dict[str, Any]) -> ContentSummary:
         version_no=version_no,
         open_high=open_high,
         needs_verification=needs_verification,
+        assigned_to=item.get("assigned_to"),
+        due_at=item.get("due_at"),
     )
 
 
@@ -331,7 +340,10 @@ def list_content(
     principal: Principal = Depends(get_principal), db: Database = Depends(get_db)
 ) -> list[ContentSummary]:
     rows = db.query(
-        "SELECT * FROM content_items WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC",
+        "SELECT ci.*, ra.assignee_name AS assigned_to, ra.due_at AS due_at"
+        " FROM content_items ci LEFT JOIN review_assignments ra"
+        " ON ra.content_item_id = ci.id AND ra.workspace_id = ci.workspace_id"
+        " WHERE ci.workspace_id = ? ORDER BY ci.updated_at DESC, ci.id DESC",
         (principal.workspace_id,),
     )
     return [_summary(db, principal.workspace_id, r) for r in rows]
@@ -349,8 +361,11 @@ def review_queue(
         waiting = (STATUS_MANAGER_REVIEW, STATUS_RESUBMITTED)
     placeholders = ",".join("?" for _ in waiting)
     rows = db.query(
-        f"SELECT * FROM content_items WHERE workspace_id = ? AND status IN ({placeholders})"
-        " ORDER BY updated_at DESC, id DESC",
+        "SELECT ci.*, ra.assignee_name AS assigned_to, ra.due_at AS due_at"
+        " FROM content_items ci LEFT JOIN review_assignments ra"
+        " ON ra.content_item_id = ci.id AND ra.workspace_id = ci.workspace_id"
+        f" WHERE ci.workspace_id = ? AND ci.status IN ({placeholders})"
+        " ORDER BY ci.updated_at DESC, ci.id DESC",
         (principal.workspace_id, *waiting),
     )
     return [_summary(db, principal.workspace_id, r) for r in rows]

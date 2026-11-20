@@ -44,6 +44,14 @@ function SummaryCard({
             <span className="badge bg-brand-100 text-brand-800">No open high-severity items</span>
           )}
         </div>
+        {(item.assigned_to || item.due_at) && (
+          <p className="mt-2 text-xs text-gray-600">
+            {item.assigned_to ? `Assigned to ${item.assigned_to}` : 'Unassigned'}
+            {item.due_at
+              ? ` · Due ${Number.isNaN(new Date(item.due_at).getTime()) ? item.due_at : new Date(item.due_at).toLocaleString()}`
+              : ''}
+          </p>
+        )}
       </Link>
       {canViewHistory && (
         <Link

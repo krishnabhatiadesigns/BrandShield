@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../components/AuthContext'
@@ -16,6 +16,7 @@ export default function NewSubmission() {
   const navigate = useNavigate()
   const { me } = useAuth()
   const [samples, setSamples] = useState<SampleInfo[] | null>(null)
+  const [samplesError, setSamplesError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [contentType, setContentType] = useState<ContentType>('social')
   const [body, setBody] = useState('')
@@ -23,13 +24,62 @@ export default function NewSubmission() {
   const [error, setError] = useState<string | null>(null)
   const [loadedSample, setLoadedSample] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const operationInProgress = useRef(false)
+  const pendingReviewStorageKey = me
+    ? `brandshield.pending-review:${me.workspace_id}:${me.user_id}`
+    : null
+  const [pendingReviewId, setPendingReviewId] = useState<number | null>(() => {
+    if (!pendingReviewStorageKey) return null
+    const saved = sessionStorage.getItem(pendingReviewStorageKey)
+    if (!saved) return null
+    const id = Number(saved)
+    if (Number.isInteger(id) && id > 0) return id
+    sessionStorage.removeItem(pendingReviewStorageKey)
+    return null
+  })
+
+  const loadSamples = useCallback(async () => {
+    setSamples(null)
+    setSamplesError(null)
+    try {
+      setSamples(await api.samples())
+    } catch (err) {
+      setSamples([])
+      setSamplesError(err instanceof Error ? err.message : 'Could not load sample drafts.')
+    }
+  }, [])
 
   useEffect(() => {
-    api
-      .samples()
-      .then(setSamples)
-      .catch(() => setSamples([]))
-  }, [])
+    void loadSamples()
+  }, [loadSamples])
+
+  const persistPendingReview = (id: number | null) => {
+    setPendingReviewId(id)
+    if (!pendingReviewStorageKey) return
+    if (id === null) sessionStorage.removeItem(pendingReviewStorageKey)
+    else sessionStorage.setItem(pendingReviewStorageKey, String(id))
+  }
+
+  const retryPendingReview = async () => {
+    if (pendingReviewId === null || operationInProgress.current) return
+    operationInProgress.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      const reviewed = await api.review(pendingReviewId)
+      persistPendingReview(null)
+      navigate(`/review/${reviewed.id}`)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Submission #${pendingReviewId} is saved, but its review did not finish: ${err.message}`
+          : `Submission #${pendingReviewId} is saved. Retry its review without creating another submission.`,
+      )
+    } finally {
+      operationInProgress.current = false
+      setBusy(false)
+    }
+  }
 
   const loadSample = (sample: SampleInfo) => {
     setTitle(sample.title)
@@ -44,35 +94,67 @@ export default function NewSubmission() {
       setError('Add a title and some content before running the check.')
       return
     }
+    if (operationInProgress.current) return
+    operationInProgress.current = true
     setBusy(true)
     setError(null)
+    let createdId: number | null = null
     try {
       const created = await api.createContent({
         title: title.trim(),
         content_type: contentType,
         body,
       })
+      createdId = created.id
+      persistPendingReview(created.id)
       const reviewed = await api.review(created.id)
+      persistPendingReview(null)
       navigate(`/review/${reviewed.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not run the check.')
+      const detail = err instanceof Error ? err.message : 'Could not run the check.'
+      setError(
+        createdId
+          ? `Submission #${createdId} is saved, but its review did not finish: ${detail}`
+          : detail,
+      )
     } finally {
+      operationInProgress.current = false
       setBusy(false)
     }
   }
 
   const upload = async (file: File) => {
+    if (operationInProgress.current) return
+    operationInProgress.current = true
     setBusy(true)
     setError(null)
+    let createdId: number | null = null
     try {
       const created = await api.uploadContent(file, title.trim() || file.name, contentType)
+      createdId = created.id
+      persistPendingReview(created.id)
       const reviewed = await api.review(created.id)
+      persistPendingReview(null)
       navigate(`/review/${reviewed.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not read that file.')
+      const detail = err instanceof Error ? err.message : 'Could not read that file.'
+      setError(
+        createdId
+          ? `Submission #${createdId} is saved, but its review did not finish: ${detail}`
+          : detail,
+      )
     } finally {
+      operationInProgress.current = false
       setBusy(false)
     }
+  }
+
+  const startAnotherSubmission = () => {
+    persistPendingReview(null)
+    setTitle('')
+    setBody('')
+    setLoadedSample(null)
+    setError(null)
   }
 
   const canCreate = me?.role === 'creator' || me?.role === 'admin'
@@ -106,6 +188,25 @@ export default function NewSubmission() {
       </div>
       {error && <ErrorBanner message={error} />}
 
+      {pendingReviewId !== null ? (
+        <section className="card space-y-3 p-5">
+          <h2 className="text-lg font-bold text-brand-900">Submission saved; review needs retry</h2>
+          <p className="text-sm text-gray-700">
+            Submission #{pendingReviewId} is already saved. Retry its review here instead of
+            submitting the same content again.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryPendingReview()}>
+              {busy ? <Spinner /> : null}
+              Retry review
+            </button>
+            <button type="button" className="btn-secondary" disabled={busy} onClick={startAnotherSubmission}>
+              Start another submission
+            </button>
+          </div>
+        </section>
+      ) : (
+      <>
       <section className="card p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
           Load a sample draft
@@ -115,6 +216,15 @@ export default function NewSubmission() {
         </p>
         {samples === null ? (
           <LoadingBlock label="Loading samples…" />
+        ) : samplesError ? (
+          <div className="mt-3 space-y-2">
+            <ErrorBanner message={samplesError} />
+            <button type="button" className="btn-secondary" onClick={() => void loadSamples()}>
+              Retry loading samples
+            </button>
+          </div>
+        ) : samples.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">No sample drafts are available right now.</p>
         ) : (
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             {samples.map((sample) => (
@@ -226,6 +336,8 @@ export default function NewSubmission() {
           with a clear message rather than silently returning nothing.
         </p>
       </section>
+      </>
+      )}
     </div>
   )
 }

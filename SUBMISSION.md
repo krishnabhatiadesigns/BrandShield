@@ -32,8 +32,8 @@ replacement. People decide what to change; the product never auto-publishes.
 - Choose social, ad, email or document content types; load sample drafts.
 - Run deterministic brand checks without an AI service.
 - Optionally run Groq analysis with retrieval over approved, in-force passages.
-- Scope retrieval and stored records to the signed-in workspace.
-- Create organizations and multiple brand workspaces; switch only among brands with active membership.
+- Scope retrieval and stored records to the selected workspace.
+- Support organizations, brand workspaces and backend membership integrations.
 - Configure versioned, content-applicable brand policy rules and retain the exact cited rule version on AI findings.
 - Validate AI findings against the draft and approved sources; downgrade invalid
   evidence and remove unsafe suggestions.
@@ -43,24 +43,32 @@ replacement. People decide what to change; the product never auto-publishes.
 - Edit drafts directly, preserve the version history and record audit events.
 - Route work from creator to manager to approver; send work back with a required
   note and show that note to the intended next reviewer.
+- Let managers assign submissions to active reviewers and set due dates; show
+  assignment details in the dashboard and queue.
 - Approve, request changes or reject a specific version. Require explicit
   sign-off before approving unresolved high-severity findings.
 - Add comments, review prior versions and inspect the audit trail.
 - Maintain company context, guidelines/passages, approved and prohibited terms,
-  facts, disclaimers and brand palette.
-- Check palette similarity with CIE76 colour difference and text contrast with
-  WCAG 2.1 relative luminance.
+  source-linked facts, disclaimers and brand palette. Managers can add, edit and
+  delete terms, facts and palette colours; changes are audited.
+- Download stored source PDFs for uploaded guidelines. Manually entered passages
+  are marked as having no source file.
+- Check uploaded image palette similarity with CIE76 colour difference, and text
+  contrast with WCAG 2.1 relative luminance.
 - Use responsive screens, loading/error states, empty states and retry controls.
 
 ### Explicit limitations
 
-- OCR is not implemented; scanned PDFs without selectable text are rejected.
-- Visual checking accepts hex colours; it does not inspect uploaded images.
-- Supabase email/password authentication, invitation, recovery and workspace
-  member role/access controls and organization/brand workspaces are implemented
-  but require provider configuration and live verification. Guideline uploads
-  are parsed in memory and are not persisted to object storage.
-- Analytics, email notifications and publishing integrations are not built.
+- Image analysis estimates dominant colours only; it does not identify text
+  regions, font faces or logo placement. Contrast is checked from explicitly
+  entered text/background colours, not inferred from arbitrary image pixels.
+- Scanned PDFs without selectable text are rejected; OCR is not included.
+- Backend Supabase verification and organization/member integration APIs remain,
+  but employee sign-in, recovery and invitation password setup are not exposed
+  in the public demo UI.
+- Analytics and audit exports work. Email notification delivery requires SMTP
+  configuration and has not been verified end to end; publishing integrations
+  are not built.
 - The planned labelled accuracy set was not completed. No precision/recall or
   accuracy score is claimed.
 
@@ -131,14 +139,15 @@ claimed.
 
 ## Testing details
 
-Verified locally on 18 November 2026:
+Verified locally on 21 November 2026:
 
-- From `backend\`, `.venv\Scripts\python.exe -m pytest tests -v` — **46 tests passed**.
+- From `backend\`, `.venv\Scripts\python.exe -m pytest tests -v` — **53 tests passed**.
   Coverage includes evidence validation, visual checks, workflow transitions,
   re-run decision preservation, exact-version approval, reviewer role
   restrictions, stale/overlapping edits, duplicate actions, whitespace-only
-  submission rejection, session expiry/revocation, CORS allowlisting and
-  workspace-scoped retrieval.
+  submission rejection, session expiry/revocation, CORS allowlisting,
+  workspace-scoped retrieval, Manager-only brand-data CRUD, audit events,
+  approved fact sources, guideline source downloads and reviewer assignments.
 - `npm run build` in `frontend` — TypeScript check and Vite production build
   passed.
 - The live frontend loaded and the deployed API `/health` endpoint returned
@@ -149,21 +158,17 @@ Verified locally on 18 November 2026:
 
 ## Product roadmap
 
-1. **Structured policy management:** add direct deterministic evaluation for
-   configurable rules and expand policy-change approval/governance controls.
-2. **Reliable document storage:** persist uploads in private object storage with
-   retention controls, file limits and clear download permissions.
-3. **Visual asset workflow:** add explicit image-region selection and human
-   verification before palette checks; consider OCR only after quality can be
-   measured on a labelled test set.
-4. **Evaluation and evidence quality:** build a reviewed, labelled corpus and
-   report precision and recall by rule category. Only then compare BM25 with
-   hybrid/vector retrieval and evaluate calibrated confidence and
-   citation-backed contradiction detection.
-5. **Team operations:** add analytics, audit exports and notifications based on
-   user feedback.
-6. **Integrations:** consider publishing-platform connections only after the
-   human approval and version controls are proven in production.
+1. **Visual verification:** add user-selected text regions and human-confirmed
+   logo/typeface rules. Evaluate OCR on a labelled image set before enabling it
+   as an automatic detector.
+2. **Evaluation quality:** assemble a reviewed, labelled corpus and report
+   precision and recall by rule category before tuning confidence or retrieval.
+3. **Production operations:** verify SMTP and webhook delivery, then add
+   delivery-status visibility and API-key authentication/revocation.
+4. **Deployment verification:** deploy the current changes and exercise
+   Creator, Manager and Approver journeys against the live API and browser.
+5. **Publishing integrations:** consider them only after human approval,
+   version control and rollback behavior have been proven in production.
 
 ## Reproduce locally
 

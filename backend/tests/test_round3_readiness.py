@@ -11,7 +11,7 @@ from app.auth import Principal, get_principal
 from app.checks.base import FindingDraft
 from app.db import Database, get_db
 from app.pipeline import ReviewOutcome
-from app.routers import content, visual
+from app.routers import content, operations, visual
 from app.retrieval import load_workspace_passages
 from app.schema import create_schema
 from app.validation import validate_llm_findings
@@ -41,10 +41,44 @@ def application():
 
     app = FastAPI()
     app.include_router(content.router)
+    app.include_router(operations.router)
     app.include_router(visual.router)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_principal] = principal
     return db, app, role
+
+
+def test_assignment_is_returned_in_review_detail_and_queue(application):
+    db, app, role = application
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/content",
+        json={"title": "Assigned draft", "content_type": "social", "body": "A clean draft."},
+    )
+    assert created.status_code == 201
+    item_id = created.json()["id"]
+    db.insert(
+        "INSERT INTO review_assignments"
+        " (content_item_id, workspace_id, assignee_user_id, assignee_name, due_at, updated_by, updated_at)"
+        " VALUES (?, 1, 'approver-id', 'Rohan Approver', '2026-12-01T17:00:00', 'Arun Manager', 'now')",
+        (item_id,),
+    )
+    db.insert(
+        "UPDATE content_items SET status='Manager Review' WHERE id=?",
+        (item_id,),
+    )
+
+    detail = client.get(f"/api/content/{item_id}")
+    assert detail.status_code == 200
+    assert detail.json()["assignment"]["assignee_name"] == "Rohan Approver"
+
+    role["value"] = "manager"
+    queue = client.get("/api/content/queue")
+    assert queue.status_code == 200
+    assigned_summary = next(row for row in queue.json() if row["id"] == item_id)
+    assert assigned_summary["assigned_to"] == "Rohan Approver"
+    assert assigned_summary["due_at"] == "2026-12-01T17:00:00"
 
 
 def test_llm_evidence_and_suggestion_are_verified():

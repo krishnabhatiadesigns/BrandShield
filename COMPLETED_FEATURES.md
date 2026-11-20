@@ -2,9 +2,10 @@
 
 An honest list of what works, what is partial, and what is not built.
 
-The 46-test local suite and frontend production build were last verified:
-2026-11-20. The deployed health endpoint was last checked on 2026-11-18 and
-has not been rechecked after the recent local changes.
+The 53-test local suite and frontend production build were verified on
+2026-11-21. The deployed API health endpoint was last checked on 2026-11-18;
+the current local profile-management changes still need deployment and a live
+end-to-end check.
 
 ---
 
@@ -38,15 +39,12 @@ has not been rechecked after the recent local changes.
 - Only the approver can make the final decision.
 - Turn-aware UI: action buttons only appear when the version is waiting on you.
 
-### Business authentication
-- Supabase access tokens are verified against the project issuer/JWKS.
-- Protected API requests resolve the Supabase subject to an active workspace membership;
-  role authorization comes from the membership database row.
-- Workspace admins can invite employees, assign/update roles and deactivate/reactivate accounts.
-- Verified users can create an organization when enabled; organization admins can add brand workspaces.
-- Members can switch between only the brand workspaces they are authorized to access.
-- Password recovery and invitation password setup use Supabase's email links.
-- Demo role selection is disabled by default in code and can be enabled explicitly for local demos.
+### Demo access and backend identity
+- The public web app offers Creator, Manager and Approver demo roles without an
+  employee sign-in or password flow.
+- Demo sessions expire after 12 hours by default and are rejected after logout.
+- Backend Supabase token verification, organization creation and member administration
+  remain available for server-side integrations; there is no browser sign-in UI for them.
 
 ### Resilience
 - If the LLM fails, times out or is unconfigured, deterministic findings still
@@ -60,10 +58,14 @@ has not been rechecked after the recent local changes.
 
 ### Brand profile
 - View guidelines, passages, approved/prohibited terms, facts, palette.
-- Add terms, facts, palette colours and passages (manager/admin).
+- Managers can add, edit and delete terms, facts and palette colours; changes
+  are workspace-scoped and recorded in the audit trail.
+- Approved facts can cite an approved passage from the same workspace.
+- Download the original private PDF source from uploaded guideline passages.
+- Manual passages correctly show that no source file is available.
 - Create, edit, disable and version structured policy rules with content applicability and effective dates.
 - AI policy findings retain the cited rule version and text; invalid/inactive rule citations require verification.
-- Upload a guideline PDF → ingested into approved passages, one chunk per page.
+- Upload a text-based guideline PDF → ingested into approved passages, one chunk per page.
 
 ### Visual checks
 - Palette similarity using real CIE76 colour distance.
@@ -78,7 +80,8 @@ has not been rechecked after the recent local changes.
 - Original content uploads and guideline PDFs persist in private local storage
   or configured S3-compatible storage, with workspace-checked download routes.
 - Workspace analytics and audit CSV export.
-- Review assignment and due-date API.
+- Managers can assign active reviewers and set deadlines from a submission's
+  review page; assignments and due dates also appear on dashboard cards.
 - API-key creation stores only hashes; newly created keys are currently
   intended as credentials for future integration work until key authentication
   and revocation are wired in.
@@ -103,10 +106,9 @@ has not been rechecked after the recent local changes.
 | Feature | Limitation |
 |---|---|
 | **Decision preservation on re-run** | Decisions survive only for findings that reappear identically (same rule + span). If the LLM rewords a finding, it returns as `pending`. Deterministic findings are stable and always keep decisions. |
-| **Authentication and tenancy** | Supabase email/password sign-in, recovery, invitations, organization onboarding and brand workspace switching are implemented but need customer Supabase configuration and live end-to-end verification. Demo role selection is disabled by default in code and should stay off in production. |
+| **Backend organization/member integrations** | Supabase token verification and admin APIs remain in the backend but are not exposed through the public demo's browser UI; a customer-facing sign-in experience is not included. |
 | **OCR** | Not implemented. Scanned PDFs are rejected with a clear message. |
-| **Deployment** | Public frontend and API are deployed. Health checks passed on 2026-11-18; current local changes are not yet deployed. |
-| **Assignment UI** | Assignment and due-date API exists; a reviewer assignment form is not yet surfaced in the submission UI. |
+| **Deployment** | Public frontend and API are deployed. Recheck API health and run the complete workflow after deploying the current local changes. |
 | **API-key integration** | Key creation/listing exists, but API-key authentication and revocation are not yet implemented. |
 | **Evaluation** | Synthetic fixtures test regression only. A reviewed real-world labelled corpus and precision/recall by category are not available. |
 
@@ -116,6 +118,7 @@ has not been rechecked after the recent local changes.
 
 - Analytics and audit export are implemented locally.
 - SMTP and signed webhook delivery require production credentials/endpoints and live end-to-end testing.
+- Assignment notification emails are queued when an assigned submission is sent for review; delivery depends on SMTP configuration.
 - Private S3-compatible storage requires a configured bucket and credentials; the local backend has not been configured against production storage.
 - Live image OCR/logo/typeface recognition is not enabled; image colour checks and
   manual-review limitations are implemented.

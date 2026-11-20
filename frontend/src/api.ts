@@ -12,6 +12,7 @@ import type {
   VisualCheckResponse,
   WorkspaceMember,
   Workspace,
+  ReviewAssignment,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
@@ -222,12 +223,48 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ company_context: companyContext }),
     }),
-  addTerm: (payload: { term: string; kind: string; replacement?: string; notes?: string }) =>
+  addTerm: (payload: {
+    term: string
+    kind: string
+    replacement?: string | null
+    notes?: string | null
+  }) =>
     request('/api/brand/terms', { method: 'POST', body: JSON.stringify(payload) }),
-  addFact: (payload: { fact_key: string; value: string; unit?: string }) =>
+  updateTerm: (
+    id: number,
+    payload: { term: string; kind: string; replacement?: string | null; notes?: string | null },
+  ) =>
+    request(`/api/brand/terms/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteTerm: (id: number) =>
+    request<void>(`/api/brand/terms/${id}`, { method: 'DELETE' }),
+  addFact: (payload: {
+    fact_key: string
+    value: string
+    unit?: string | null
+    source_passage_id?: number | null
+  }) =>
     request('/api/brand/facts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateFact: (
+    id: number,
+    payload: {
+      fact_key: string
+      value: string
+      unit?: string | null
+      source_passage_id?: number | null
+    },
+  ) =>
+    request(`/api/brand/facts/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteFact: (id: number) =>
+    request<void>(`/api/brand/facts/${id}`, { method: 'DELETE' }),
   addPalette: (payload: { name: string; hex: string; role?: string }) =>
     request('/api/brand/palette', { method: 'POST', body: JSON.stringify(payload) }),
+  updatePalette: (
+    id: number,
+    payload: { name: string; hex: string; role?: string | null },
+  ) =>
+    request(`/api/brand/palette/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deletePalette: (id: number) =>
+    request<void>(`/api/brand/palette/${id}`, { method: 'DELETE' }),
   addPassage: (payload: { source: string; section?: string; text: string }) =>
     request('/api/brand/passages', { method: 'POST', body: JSON.stringify(payload) }),
   uploadGuideline: (file: File, title: string) => {
@@ -237,6 +274,46 @@ export const api = {
       method: 'POST',
       body: form,
     })
+  },
+  downloadGuidelineSource: async (documentId: number) => {
+    const headers = new Headers()
+    const token = getToken()
+    if (token) headers.set('X-Demo-Token', token)
+    const workspaceId = getWorkspaceId()
+    if (workspaceId) headers.set('X-Workspace-ID', String(workspaceId))
+
+    let response: Response
+    try {
+      response = await fetch(
+        `${BASE}/api/brand/guidelines/${documentId}/source`,
+        { headers },
+      )
+    } catch {
+      throw new ApiError('Could not reach the server. Check your connection and try again.', 0)
+    }
+
+    if (!response.ok) {
+      let detail = `Could not download the guideline source (${response.status}).`
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') detail = data.detail
+      } catch {
+        /* keep the default message */
+      }
+      throw new ApiError(detail, response.status)
+    }
+
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const filename = encodedFilename
+      ? decodeURIComponent(encodedFilename)
+      : `guideline-${documentId}.pdf`
+    const url = URL.createObjectURL(await response.blob())
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
   },
 
   visualCheck: (payload: {
@@ -296,8 +373,9 @@ export const api = {
       { method: 'POST', body: JSON.stringify(payload) },
     ),
   assignment: (itemId: number, payload: { assignee_user_id?: string | null; assignee_name?: string | null; due_at?: string | null }) =>
-    request<Record<string, unknown>>(`/api/operations/content/${itemId}/assignment`, {
+    request<ReviewAssignment>(`/api/operations/content/${itemId}/assignment`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+  reviewers: () => request<WorkspaceMember[]>('/api/operations/reviewers'),
 }

@@ -40,6 +40,13 @@ def _client():
 def test_assignment_analytics_api_key_and_webhook():
     db, client = _client()
 
+    reviewers = client.get("/api/operations/reviewers")
+    assert reviewers.status_code == 200
+    assert {member["user_id"] for member in reviewers.json()} == {
+        "admin-id",
+        "reviewer-id",
+    }
+
     assigned = client.put(
         "/api/operations/content/1/assignment",
         json={
@@ -49,6 +56,7 @@ def test_assignment_analytics_api_key_and_webhook():
     )
     assert assigned.status_code == 200
     assert assigned.json()["assignee_name"] == "Reviewer"
+    assert assigned.json()["due_at"] == "2026-12-01T17:00:00"
 
     analytics = client.get("/api/operations/analytics")
     assert analytics.status_code == 200

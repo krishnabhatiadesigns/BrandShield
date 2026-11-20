@@ -105,6 +105,7 @@ export interface ContentDetail {
   created_at: string
   updated_at: string
   current_version: Version | null
+  assignment: ReviewAssignment | null
   findings: Finding[]
   review_run: ReviewRun | null
   comments: Comment[]
@@ -121,6 +122,18 @@ export interface ContentSummary {
   version_no: number
   open_high: number
   needs_verification: number
+  assigned_to: string | null
+  due_at: string | null
+}
+
+export interface ReviewAssignment {
+  content_item_id: number
+  workspace_id: number
+  assignee_user_id: string | null
+  assignee_name: string | null
+  due_at: string | null
+  updated_by: string
+  updated_at: string
 }
 
 export interface SampleInfo {
@@ -136,6 +149,8 @@ export interface Passage {
   section: string | null
   page: number | null
   text: string
+  document_id: number | null
+  source_available: boolean
 }
 
 export interface Term {

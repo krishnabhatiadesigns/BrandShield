@@ -74,7 +74,7 @@ npm run dev
 Open http://localhost:5173. The anonymous demo role selector is enabled by
 default and always available. Visitors choose a demo persona (no employee
 account or password) to enter the fictional seeded workspace. Only the Manager
-role can add or update brand details. Vercel rewrites app routes to the SPA
+role can add, update or delete brand details. Vercel rewrites app routes to the SPA
 entry point so deep links work when opened directly.
 
 ### Authentication model
@@ -198,13 +198,19 @@ If the LLM fails or times out, steps 2, 3 and 6 still run and the UI says so.
 
 Roles are enforced **in the backend**, not only the UI. Managers and approvers
 cannot create submissions, so the person who writes a draft is never the person
-who approves it. Only the Manager role can add or update brand profile details.
+who approves it. Only the Manager role can add, update or delete brand profile details.
 
 The public demo role-selection flow is not production identity management;
 anyone can choose a role in the fictional seeded workspace. Business accounts
 can access backend integration endpoints with Supabase-verified access tokens
 and active workspace membership records. Demo sessions expire after 12 hours
 and are revoked on sign-out.
+
+Managers can assign a submission to an active manager or approver and set a due
+date from its review page. Assignment and due-date details appear in submission
+cards. When assigned work is sent for review, the backend queues an email
+notification; actual delivery requires configured SMTP and has not been
+verified in the public demo.
 
 Organizations can contain multiple brand workspaces. Members can switch only
 between workspaces where they have an active membership; admins invite staff
@@ -220,6 +226,25 @@ immutable numbered versions. Only enabled rules matching the submission type
 are included in AI analysis. A finding citing a policy rule records its version
 and text so later edits do not rewrite the review evidence. Rules without an
 approved passage are not accepted as factual evidence.
+
+### Brand profile management
+
+Managers can add, edit and delete approved/prohibited terms, approved facts and
+palette colours. Changes are workspace-scoped and written to the audit trail;
+deleting an entry requires confirmation because it changes future checks.
+Approved facts can be linked to an approved passage from the same brand.
+Uploaded text-based guideline PDFs retain a private source file that can be
+downloaded from the Guidelines tab; manually entered passages have no source
+file to download.
+
+### Visual asset limits and next steps
+
+Visual checks calculate palette similarity and WCAG contrast, and image uploads
+are sampled for dominant colours. They do not automatically identify text
+regions, typefaces or logo placement. Scanned PDFs are rejected with an
+explanation; OCR is not included. See
+[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for verified scope and
+[SUBMISSION.md](./SUBMISSION.md) for the prioritized roadmap.
 
 ---
 
