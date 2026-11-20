@@ -13,6 +13,7 @@ type Tab = 'context' | 'guidelines' | 'rules' | 'terms' | 'facts' | 'palette' | 
 
 export default function BrandProfilePage() {
   const { me } = useAuth()
+  const workspaceId = me?.workspace_id
   const [profile, setProfile] = useState<BrandProfile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('context')
@@ -20,39 +21,63 @@ export default function BrandProfilePage() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const canEdit = me?.role === 'manager'
+  const readOnlyNotice = !canEdit && (
+    <p
+      className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+      role="note"
+    >
+      Only the Manager role can edit brand details. You can view the approved profile.
+    </p>
+  )
 
   const load = useCallback(async () => {
     setError(null)
     try {
       setProfile(await api.brand())
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the brand profile.')
+      return false
     }
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => {
+    setProfile(null)
     void load()
   }, [load])
 
-  const run = async (fn: () => Promise<unknown>, message: string) => {
+  const run = async (fn: () => Promise<unknown>, message: string): Promise<boolean> => {
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       await fn()
-      await load()
-      setNotice(message)
+      if (await load()) setNotice(message)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That change failed.')
+      return false
     } finally {
       setBusy(false)
     }
   }
 
   if (error && !profile) {
-    return <ErrorBanner message={error} onRetry={() => void load()} />
+    return (
+      <div className="space-y-5">
+        {readOnlyNotice}
+        <ErrorBanner message={error} onRetry={() => void load()} />
+      </div>
+    )
   }
-  if (!profile) return <LoadingBlock label="Loading the brand profile…" />
+  if (!profile) {
+    return (
+      <div className="space-y-5">
+        {readOnlyNotice}
+        <LoadingBlock label="Loading the brand profile…" />
+      </div>
+    )
+  }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'context', label: 'Company context' },
@@ -72,6 +97,8 @@ export default function BrandProfilePage() {
           {profile.workspace_name} · the approved knowledge every check runs against.
         </p>
       </div>
+
+      {readOnlyNotice}
 
       {error && <ErrorBanner message={error} />}
       {notice && (
@@ -111,7 +138,7 @@ export default function BrandProfilePage() {
   )
 }
 
-type RunFn = (fn: () => Promise<unknown>, message: string) => Promise<void>
+type RunFn = (fn: () => Promise<unknown>, message: string) => Promise<boolean>
 
 const EMPTY_RULE: GuidelineRulePayload = {
   category: 'messaging',
@@ -142,6 +169,7 @@ function RulesTab({
   const [history, setHistory] = useState<
     { version: number; snapshot: Record<string, unknown>; effective_date: string; created_by: string }[]
   >([])
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const editing = profile.rules.find((rule) => rule.id === selectedId)
   const set = <K extends keyof GuidelineRulePayload>(key: K, value: GuidelineRulePayload[K]) =>
     setForm((current) => ({ ...current, [key]: value }))
@@ -162,18 +190,19 @@ function RulesTab({
       effective_date: rule.effective_date,
     })
     setHistory([])
+    setHistoryError(null)
   }
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!form.title.trim() || !form.description.trim() || !form.content_types.length) return
-    await run(
+    if (!await run(
       () =>
         editing
           ? api.updateGuidelineRule(editing.id, form)
           : api.createGuidelineRule(form),
       editing ? 'Brand rule updated and versioned.' : 'Brand rule created.',
-    )
+    )) return
     setSelectedId(null)
     setForm(EMPTY_RULE)
     setHistory([])
@@ -330,10 +359,18 @@ function RulesTab({
           </button>
           {editing && (
             <button type="button" className="btn-secondary w-full" disabled={busy}
-              onClick={() => void api.guidelineRuleVersions(editing.id).then(setHistory)}>
+              onClick={() => {
+                setHistoryError(null)
+                void api.guidelineRuleVersions(editing.id).then(setHistory).catch((err: unknown) =>
+                  setHistoryError(
+                    err instanceof Error ? err.message : 'Could not load rule history.',
+                  ),
+                )
+              }}>
               Show version history
             </button>
           )}
+          {historyError && <p className="text-sm text-red-700" role="alert">{historyError}</p>}
           {history.length > 0 && (
             <ol className="space-y-2 border-t pt-3 text-xs text-gray-600">
               {history.map((item) => (
@@ -383,7 +420,7 @@ function CompanyContextTab({
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-gray-500">{companyContext.length}/10,000 characters</span>
-        {canEdit ? (
+        {canEdit && (
           <button
             className="btn-primary"
             disabled={busy || companyContext === profile.company_context}
@@ -397,10 +434,6 @@ function CompanyContextTab({
             {busy ? <Spinner /> : null}
             Save company context
           </button>
-        ) : (
-          <span className="text-xs text-gray-500">
-            Only the Manager role can edit brand details.
-          </span>
         )}
       </div>
     </section>
@@ -463,7 +496,8 @@ function GuidelinesTab({
                       text: text.trim(),
                     }),
                   'Guideline passage added and is now in force.',
-                ).then(() => {
+                ).then((saved) => {
+                  if (!saved) return
                   setSource('')
                   setSection('')
                   setText('')
@@ -578,7 +612,8 @@ function TermsTab({
                     replacement: replacement.trim() || undefined,
                   }),
                 'Term added.',
-              ).then(() => {
+              ).then((saved) => {
+                if (!saved) return
                 setTerm('')
                 setReplacement('')
               })
@@ -673,7 +708,8 @@ function FactsTab({
                     unit: unit.trim() || undefined,
                   }),
                 'Fact added.',
-              ).then(() => {
+              ).then((saved) => {
+                if (!saved) return
                 setKey('')
                 setValue('')
                 setUnit('')
@@ -767,7 +803,8 @@ function PaletteTab({
                       role: role.trim() || undefined,
                     }),
                   'Palette colour added.',
-                ).then(() => {
+                ).then((saved) => {
+                  if (!saved) return
                   setName('')
                   setRole('')
                 })
