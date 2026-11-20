@@ -95,7 +95,7 @@ Set these backend variables in the hosting provider:
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only key used to invite, ban and unban users. Never put this in frontend variables. |
 | `SUPABASE_JWT_SECRET` | Optional legacy HS256 verification secret. Prefer Supabase's asymmetric JWKS keys and leave blank when possible. |
 | `APP_FRONTEND_URL` | Exact frontend origin used for invitation redirects. |
-| `DEMO_AUTH_ENABLED` | Set to `false` on public/business deployments. |
+| `DEMO_AUTH_ENABLED` | Defaults to `true` for the public hackathon demo; set to `false` to disable demo personas. |
 
 Set these frontend build variables:
 
