@@ -143,8 +143,8 @@ export default function Layout() {
                 signOut()
                 navigate('/')
               }}
-              aria-label={me?.is_demo ? 'Switch demo role' : 'Sign out'}
-              title={me?.is_demo ? 'Leave this role and pick another demo role' : 'Sign out'}
+              aria-label="Switch demo role"
+              title="Leave this role and pick another demo role"
             >
               <svg
                 className="h-5 w-5 sm:h-4 sm:w-4"
@@ -161,7 +161,7 @@ export default function Layout() {
                 <path d="M8 21H3v-5" />
                 <path d="M3 21l7-7" />
               </svg>
-              <span className="hidden sm:inline">{me?.is_demo ? 'Switch role' : 'Sign out'}</span>
+              <span className="hidden sm:inline">Switch role</span>
             </button>
           </div>
         </div>

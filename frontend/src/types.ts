@@ -17,7 +17,6 @@ export interface Me {
   role: Role
   workspace_id: number
   workspace_name: string
-  is_demo: boolean
   llm_enabled: boolean
 }
 

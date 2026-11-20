@@ -68,52 +68,11 @@ const USPS = [
 ]
 
 export default function Landing() {
-  const {
-    enterDemo,
-    waking,
-    error,
-    me,
-    authEnabled,
-    demoEnabled,
-    signIn,
-    sendPasswordReset,
-    signOut,
-    needsOrganizationSetup,
-    organizationCreationEnabled,
-    createOrganization,
-  } = useAuth()
+  const { enterDemo, waking, error, me } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [helpOpen, setHelpOpen] = useState(false)
   const [whyUsOpen, setWhyUsOpen] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loginError, setLoginError] = useState<string | null>(null)
-  const [resetNotice, setResetNotice] = useState<string | null>(null)
-  const [resetMode, setResetMode] = useState(false)
-  const [organizationName, setOrganizationName] = useState('')
-  const [brandName, setBrandName] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [organizationBusy, setOrganizationBusy] = useState(false)
-  const [organizationError, setOrganizationError] = useState<string | null>(null)
-
-  const submitOrganization = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setOrganizationBusy(true)
-    setOrganizationError(null)
-    try {
-      await createOrganization({
-        name: organizationName.trim(),
-        brand_name: brandName.trim() || undefined,
-        display_name: displayName.trim(),
-      })
-      navigate('/dashboard')
-    } catch (err) {
-      setOrganizationError(err instanceof Error ? err.message : 'Could not create your organization.')
-    } finally {
-      setOrganizationBusy(false)
-    }
-  }
 
   const start = async (role: 'creator' | 'manager' | 'approver') => {
     if (await enterDemo(role)) {
@@ -128,37 +87,13 @@ export default function Landing() {
     }
   }
 
-  const submitSignIn = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoginError(null)
-    setResetNotice(null)
-    try {
-      await signIn(email, password)
-      navigate('/dashboard')
-    } catch (err) {
-      setLoginError(err instanceof Error ? err.message : 'Sign-in failed.')
-    }
-  }
-
-  const submitPasswordReset = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoginError(null)
-    setResetNotice(null)
-    try {
-      await sendPasswordReset(email)
-      setResetNotice('If the account exists, a password recovery link will be sent to that email.')
-    } catch (err) {
-      setLoginError(err instanceof Error ? err.message : 'Could not request password recovery.')
-    }
-  }
-
   return (
     <div className="min-h-screen bg-cream">
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
         <header className="text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1 text-xs font-semibold text-brand-800">
             <span className="h-2 w-2 rounded-full bg-brand-500" />
-            {demoEnabled ? 'Live demo · fictional brand data' : 'Secure team sign-in'}
+            Live demo · fictional brand data
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-brand-900 sm:text-5xl">
             BrandShield <span className="text-gold-500">AI</span>
@@ -196,139 +131,6 @@ export default function Landing() {
             </button>
           </div>
         </header>
-
-        {authEnabled && !demoEnabled && !me && (
-          <form
-            className="card mx-auto mt-8 max-w-xl space-y-4 p-5"
-            onSubmit={(event) => void (resetMode ? submitPasswordReset(event) : submitSignIn(event))}
-          >
-            <div>
-              <h2 className="text-lg font-bold text-brand-900">
-                {resetMode ? 'Recover your password' : 'Employee sign-in'}
-              </h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {resetMode
-                  ? 'We’ll email a secure link if the account is registered.'
-                  : 'Use the invitation sent by your workspace administrator to set up your account.'}
-              </p>
-            </div>
-            {loginError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{loginError}</p>}
-            {resetNotice && <p className="rounded-lg bg-brand-50 p-3 text-sm text-brand-900" role="status">{resetNotice}</p>}
-            <label className="block">
-              <span className="label">Work email</span>
-              <input
-                className="input"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </label>
-            {!resetMode && (
-              <label className="block">
-                <span className="label">Password</span>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-            )}
-            <div className="flex flex-wrap items-center gap-3">
-              <button type="submit" className="btn-primary" disabled={waking}>
-                {resetMode ? 'Send recovery link' : 'Sign in'}
-              </button>
-              <button
-                type="button"
-                className="btn-ghost text-xs"
-                onClick={() => {
-                  setResetMode((value) => !value)
-                  setLoginError(null)
-                  setResetNotice(null)
-                }}
-              >
-                {resetMode ? 'Back to sign in' : 'Forgot password?'}
-              </button>
-            </div>
-          </form>
-        )}
-        {authEnabled && !demoEnabled && error && !me && (
-          <div className="mx-auto mt-3 max-w-xl text-center">
-            <button type="button" className="btn-ghost text-xs" onClick={signOut}>
-              End this session
-            </button>
-          </div>
-        )}
-        {authEnabled && needsOrganizationSetup && organizationCreationEnabled && (
-          <form
-            className="card mx-auto mt-5 max-w-xl space-y-4 p-5"
-            onSubmit={(event) => void submitOrganization(event)}
-          >
-            <div>
-              <h2 className="text-lg font-bold text-brand-900">Create your organization</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                This verified account will become its first administrator. You can invite your team
-                and add more brands afterward.
-              </p>
-            </div>
-            {organizationError && (
-              <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">
-                {organizationError}
-              </p>
-            )}
-            <label className="block">
-              <span className="label">Organization name</span>
-              <input
-                className="input"
-                required
-                minLength={2}
-                maxLength={120}
-                value={organizationName}
-                onChange={(event) => setOrganizationName(event.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="label">First brand name (optional)</span>
-              <input
-                className="input"
-                maxLength={120}
-                value={brandName}
-                onChange={(event) => setBrandName(event.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="label">Your name</span>
-              <input
-                className="input"
-                required
-                minLength={1}
-                maxLength={120}
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-              />
-            </label>
-            <button type="submit" className="btn-primary" disabled={organizationBusy}>
-              {organizationBusy ? <Spinner /> : null}
-              Create workspace
-            </button>
-          </form>
-        )}
-
-        {!authEnabled && !demoEnabled && !me && (
-          <div className="mx-auto mt-8 max-w-xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-900">
-            Business sign-in is not configured. Contact the deployment administrator.
-          </div>
-        )}
-        {authEnabled && needsOrganizationSetup && !organizationCreationEnabled && (
-          <div className="mx-auto mt-5 max-w-xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            Your account is verified but is not assigned to a workspace. Ask an organization
-            administrator for an invitation.
-          </div>
-        )}
 
         {whyUsOpen && (
           <section
@@ -381,9 +183,8 @@ export default function Landing() {
           </div>
         )}
 
-        {demoEnabled && (
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            {ROLES.map((role) => (
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          {ROLES.map((role) => (
             <button
               key={role.key}
               type="button"
@@ -397,14 +198,12 @@ export default function Landing() {
                 Enter instantly →
               </span>
             </button>
-            ))}
-          </div>
-        )}
-        {demoEnabled && (
-          <p className="mt-3 text-center text-sm text-gray-600">
-            Only the Manager role can add or update brand details in the Brand profile.
-          </p>
-        )}
+          ))}
+        </div>
+        <p className="mt-3 text-center text-sm font-bold text-gray-700">
+          Only the Manager can add or update brand details. Click Brand Profile in the navbar to add
+          or update them.
+        </p>
 
         <section className="mt-12">
           <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-gray-500">
@@ -458,9 +257,7 @@ export default function Landing() {
         </section>
 
         <p className="mt-10 text-center text-xs text-gray-500">
-          {demoEnabled
-            ? 'Demo role selection is enabled for this deployment. Business accounts use invitation-based sign-in.'
-            : 'Access is invitation-only. Contact your workspace administrator if you need an account.'}
+          Choose a demo role to open the app. No account or password is required.
         </p>
       </div>
 

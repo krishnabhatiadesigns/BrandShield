@@ -46,8 +46,7 @@ Copy-Item .env.example .env
 
 The `.env` file is optional for local use. Leave `GROQ_API_KEY` blank to run
 deterministic checks without external AI calls. `.env.example` enables the
-fictional local demo. Production deployments should disable demo access and
-configure Supabase Auth as described below.
+fictional local demo.
 
 ### 1. Backend
 
@@ -78,68 +77,19 @@ account or password) to enter the fictional seeded workspace. Only the Manager
 role can add or update brand details. Vercel rewrites app routes to the SPA
 entry point so deep links work when opened directly.
 
-### Business sign-in with Supabase
+### Authentication model
 
-The application supports invitation-only Supabase email/password accounts.
-Configure Supabase Auth to require email confirmation, disable public sign-ups,
-and allow the exact frontend URL ending in `/set-password` as a redirect URL.
-The invite link lets the employee set their password; the sign-in page also
-supports password recovery. Configure Supabase's minimum password length to at
-least 12 characters to match the password setup form.
+The web app is configured for the public demo: visitors choose Creator, Manager
+or Approver on the landing page, and no account, email or password is required.
+Selecting a role creates a short-lived demo session so the app can apply the
+role-specific workflow. The app has no employee sign-in, password recovery or
+password setup screen.
 
-Set these backend variables in the hosting provider:
-
-| Variable | Purpose |
-|---|---|
-| `SUPABASE_URL` | Supabase project URL (used for issuer and JWKS verification). |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only key used to invite, ban and unban users. Never put this in frontend variables. |
-| `SUPABASE_JWT_SECRET` | Optional legacy HS256 verification secret. Prefer Supabase's asymmetric JWKS keys and leave blank when possible. |
-| `APP_FRONTEND_URL` | Exact frontend origin used for invitation redirects. |
-
-Set these frontend build variables:
-
-| Variable | Purpose |
-|---|---|
-| `VITE_SUPABASE_URL` | The same Supabase project URL. |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (or legacy anon key). This key is safe for browser use. |
-| `VITE_API_URL` | Backend origin when the API is hosted separately. |
-| `VITE_ORGANIZATION_CREATION_ENABLED` | Exposes first-organization onboarding; only useful when backend onboarding is enabled. |
-
-For local Supabase sign-in, create `frontend/.env.local` with the frontend
-variables.
-For controlled self-service organization setup, set
-`ALLOW_ORGANIZATION_CREATION=true` on the backend and
-`VITE_ORGANIZATION_CREATION_ENABLED=true` in the frontend build environment.
-After a verified employee creates an organization, they become its first admin
-and can create brand workspaces and invite staff. Turn self-service creation off
-after onboarding if registration should remain invitation-only.
-
-#### First organization administrator
-
-For self-service onboarding, temporarily enable `ALLOW_ORGANIZATION_CREATION`
-and `VITE_ORGANIZATION_CREATION_ENABLED`; any verified account not already in
-a workspace can create its organization and becomes its first administrator.
-Disable the backend setting afterward if new organization creation should stop.
-
-Alternatively, create and verify an administrator in Supabase Auth, then insert
-that user into a workspace membership using a trusted database connection.
-Replace the placeholders; do not expose this SQL to end users:
-
-```sql
-INSERT INTO memberships
-    (workspace_id, user_id, email, display_name, role, is_active, created_at)
-SELECT id, '<SUPABASE_USER_UUID>', lower('<ADMIN_EMAIL>'), '<ADMIN_NAME>',
-       'admin', 1, CURRENT_TIMESTAMP
-FROM workspaces
-WHERE slug = 'northwind-foods';
-```
-
-The admin can then invite employees and assign their workflow role from
-**Team access**. Deactivating a member blocks BrandShield API access immediately
-and also bans the account at Supabase. Each membership is tied to one brand workspace; admins can create additional
-brands inside their organization and explicitly invite employees into each
-brand. The workspace switcher only shows workspaces the signed-in employee is
-authorized to access.
+The backend retains Supabase token verification for organization and member
+administration APIs. Those server-side integration endpoints are not used by
+the public demo UI. Keep Supabase service-role credentials on the backend only.
+For a separately hosted API, set the frontend build variable `VITE_API_URL` to
+the backend origin; leave it blank when using the local development proxy.
 
 ---
 
@@ -156,11 +106,11 @@ Copy `.env.example` to `.env` in the repo root. `.env` is gitignored.
 | `CORS_ORIGINS` | no | Comma-separated exact allowed origins; `*` is rejected. |
 | `DEMO_WORKSPACE_SLUG` | no | Defaults to `northwind-foods`. |
 | `DEMO_SESSION_TTL_HOURS` | no | Demo-session lifetime; defaults to 12 hours. |
-| `SUPABASE_URL` | no | Enables Supabase access-token verification when configured. |
+| `SUPABASE_URL` | no | Enables Supabase access-token verification for backend organization/member integrations. |
 | `SUPABASE_JWT_SECRET` | no | Optional verification key for legacy HS256 JWTs. |
 | `SUPABASE_SERVICE_ROLE_KEY` | no | Server-only member invitations and activation changes. |
-| `APP_FRONTEND_URL` | no | Frontend origin for Supabase invite redirects. |
-| `ALLOW_ORGANIZATION_CREATION` | no | Enables verified-account organization onboarding; default `false`. |
+| `APP_FRONTEND_URL` | no | Frontend origin for backend-managed invitation redirects. |
+| `ALLOW_ORGANIZATION_CREATION` | no | Enables organization creation through the backend integration API; default `false`. |
 | `SEED_ON_START` | no | Defaults to `true`. |
 
 **No secrets are committed.** `.env` is in `.gitignore` and was verified with
@@ -252,10 +202,9 @@ who approves it. Only the Manager role can add or update brand profile details.
 
 The public demo role-selection flow is not production identity management;
 anyone can choose a role in the fictional seeded workspace. Business accounts
-use Supabase-verified access tokens and active workspace membership records.
-Supabase manages passwords, recovery and email verification; BrandShield keeps
-roles in its own membership table. Demo sessions expire after 12 hours and are
-revoked on sign-out.
+can access backend integration endpoints with Supabase-verified access tokens
+and active workspace membership records. Demo sessions expire after 12 hours
+and are revoked on sign-out.
 
 Organizations can contain multiple brand workspaces. Members can switch only
 between workspaces where they have an active membership; admins invite staff

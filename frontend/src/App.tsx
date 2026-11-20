@@ -10,7 +10,6 @@ import Landing from './pages/Landing'
 import NewSubmission from './pages/NewSubmission'
 import Queue from './pages/Queue'
 import ReviewScreen from './pages/ReviewScreen'
-import SetPassword from './pages/SetPassword'
 import TeamAdmin from './pages/TeamAdmin'
 import Operations from './pages/Operations'
 
@@ -38,7 +37,6 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/set-password" element={<SetPassword />} />
       <Route
         element={
           <Protected>

@@ -19,8 +19,6 @@ const TOKEN_KEY = 'brandshield.token'
 const TOKEN_TYPE_KEY = 'brandshield.token-type'
 const WORKSPACE_KEY = 'brandshield.workspace-id'
 
-export type TokenType = 'demo' | 'supabase'
-
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -30,11 +28,13 @@ export class ApiError extends Error {
 }
 
 export function getToken(): string | null {
+  if (localStorage.getItem(TOKEN_TYPE_KEY) === 'supabase') {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(TOKEN_TYPE_KEY)
+    return null
+  }
+  localStorage.removeItem(TOKEN_TYPE_KEY)
   return localStorage.getItem(TOKEN_KEY)
-}
-
-export function getTokenType(): TokenType {
-  return localStorage.getItem(TOKEN_TYPE_KEY) === 'supabase' ? 'supabase' : 'demo'
 }
 
 export function getWorkspaceId(): number | null {
@@ -47,23 +47,19 @@ export function setWorkspaceId(id: number | null) {
   else localStorage.removeItem(WORKSPACE_KEY)
 }
 
-export function setToken(token: string | null, type: TokenType = 'demo') {
+export function setToken(token: string | null) {
   if (token) {
     localStorage.setItem(TOKEN_KEY, token)
-    localStorage.setItem(TOKEN_TYPE_KEY, type)
   } else {
     localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(TOKEN_TYPE_KEY)
   }
+  localStorage.removeItem(TOKEN_TYPE_KEY)
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(init.headers)
-  if (token) {
-    if (getTokenType() === 'supabase') headers.set('Authorization', `Bearer ${token}`)
-    else headers.set('X-Demo-Token', token)
-  }
+  if (token) headers.set('X-Demo-Token', token)
   const workspaceId = getWorkspaceId()
   if (workspaceId) headers.set('X-Workspace-ID', String(workspaceId))
   if (init.body && !(init.body instanceof FormData)) {
@@ -108,21 +104,6 @@ export const api = {
 
   me: () => request<Me>('/api/me'),
   workspaces: () => request<Workspace[]>('/api/workspaces'),
-  createOrganization: (payload: {
-    name: string
-    brand_name?: string
-    display_name: string
-  }) =>
-    request<{
-      organization_id: number
-      organization_name: string
-      workspace_id: number
-      workspace_name: string
-      role: string
-    }>('/api/organizations', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   createBrand: (name: string) =>
     request<Workspace>('/api/workspaces', {
       method: 'POST',
@@ -285,10 +266,7 @@ export const api = {
   downloadAuditCsv: async () => {
     const token = getToken()
     const headers = new Headers()
-    if (token) {
-      if (getTokenType() === 'supabase') headers.set('Authorization', `Bearer ${token}`)
-      else headers.set('X-Demo-Token', token)
-    }
+    if (token) headers.set('X-Demo-Token', token)
     const workspaceId = getWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-ID', String(workspaceId))
     const response = await fetch(`${BASE}/api/operations/exports/audit.csv`, { headers })
